@@ -9,9 +9,13 @@ Contact: *hugo.storm@ilr.uni-bonn.de*
 
 1) Install pipenv dependencies ```pipenv install --dev```
 
-2) Install numpyro[cuda] manually using wheels, this does not work in pipenv
+2) In order to use GPU support it is required to install numpyro[cuda] manually using wheels, currently seems to be not supported in pipenv
 
-    ```pip install numpyro[cuda] -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html```
+    ```
+    pipenv shell
+
+    pip install numpyro[cuda] -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+    ```
     
-    Additionally, you need to install flax manually:
+    Optionally install flax manually:
     ```pip install flax```

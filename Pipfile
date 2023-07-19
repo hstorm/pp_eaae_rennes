@@ -1,0 +1,21 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "env_pp_examples"
+
+[packages]
+pandas = "*"
+ipython = "*"
+scikit-learn = "*"
+matplotlib = "*"
+seaborn = "*"
+statsmodels = "*"
+xgboost = "*"
+arviz = "*"
+
+[dev-packages]
+ipykernel = "*"
+line-profiler = "*"
+black = "*"
+isort = "*"
+flake8 = "*"

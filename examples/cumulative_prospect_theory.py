@@ -240,29 +240,5 @@ if __name__ == "__main__":
     plt.xlim([-12, 12])
     plt.ylim([-12, 12])
     plt.show()
-    # %%
-    post_sam['p_accept'][0,:].shape
-    # %%
-    plt.hist(post_sam['p_accept'][0,:],bins=100);
-    # %%
-    post_sam['util_reject'][0,:]
-    # %%
-    post_sam['util_accept'][0,:]
-    post_sam['util_diff'][0,:]
-    # %%
-    az.plot_ppc()
-    # %%
-    post_sam['util_reject'].min()
-    # %%
-    post_sam['p_accept'][0,:]
-    # %%
-    util_range = jnp.linspace(-8,8,20)
-    plt.plot(util_range,1/(1+jnp.exp(-util_range)))
-
-    # %%
-    print('Shape of rho',post_sam['rho'].shape)
-    plt.hist(post_sam['rho'], bins=100);
-    # %%
-    print('Shape of lam',post_sam['lam'].shape)
-    plt.hist(post_sam['lam'], bins=100);
+    
 # %%

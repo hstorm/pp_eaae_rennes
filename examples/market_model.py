@@ -52,8 +52,8 @@ def modelMarket_old(N, quant=None,price=None,demandShocks=None, supplyShocks=Non
         latSupplyShift = numpyro.sample("latSupplyShift", dist.Normal(0., 0.5).expand([1,]), obs=latSupplyShift)
 
         a = jnp.array([[-1, 0, bPrice_supply],[0, -1, bPrice_demand],[1,-1,0]])
-        b = jnp.array([-bCons_supply - bSupplyShock * supplyShocks - latSupplyShift,
-                    -bCons_demand-bDemandShock * demandShocks - latDemandShift,
+        b = jnp.array([- bSupplyShock * supplyShocks - latSupplyShift,
+                    -bDemandShock * demandShocks - latDemandShift,
                     jnp.zeros_like(supplyShocks)])
 
         x = jnp.linalg.solve(a, b)
@@ -129,37 +129,25 @@ def modelMarket(N, quant=None,price=None,demandShocks=None, supplyShocks=None):
    
     bDemandShock = numpyro.sample("bDemandShock", dist.Normal(0, 1))
     bSupplyShock = numpyro.sample("bSupplyShock", dist.Normal(0, 1))
-    
-    a = jnp.array([[-1, 0, bPrice_supply],
+
+    # Solve a linear system of equations of the from: 
+    #   A*x=B 
+    #   with
+    #   [Q_s,Q_d,P]^T = x    
+    A = jnp.array([ [-1, 0, bPrice_supply],
                     [0, -1, bPrice_demand],
                     [1,-1,0]])
-    b = jnp.array([-bCons_supply - bSupplyShock * supplyShocks ,
-                -bCons_demand-bDemandShock * demandShocks ,
-                jnp.zeros_like(supplyShocks)])
+    B = jnp.array([
+                -bCons_supply - bSupplyShock * supplyShocks ,
+                -bCons_demand - bDemandShock * demandShocks ,
+                jnp.zeros_like(supplyShocks)
+                ])
+    x = jnp.linalg.solve(A, B)
 
-    x = jnp.linalg.solve(a, b)
-    mu_quant = x[0,:]
-    mu_price = x[2,:]
-    # mu_quant = jnp.clip(x[0,:],0,np.inf)
-    # mu_price = jnp.clip(x[2,:],0,np.inf)
+    numpyro.sample("quant",dist.LogNormal(x[0,:], 0.005), obs=quant)
+    numpyro.sample("price",dist.LogNormal(x[2,:], 0.005), obs=price)
 
-    Rho = numpyro.sample("Rho", dist.LKJ(2, 2))
-    Sigma = numpyro.sample("Sigma", dist.Exponential(3).expand([2]))
-    cov = jnp.outer(Sigma, Sigma) * Rho
-    
-    if price is not None:
-        obsPriceQuant = jnp.stack([price, quant], -1)
-    else:
-        obsPriceQuant = None
-    
-    numpyro.sample(
-        "price,quant",
-        dist.MultivariateNormal(jnp.stack([mu_price, mu_quant], -1), cov),
-        obs=obsPriceQuant,
-    )
         
-  
-
 # ===========================
 # Use model to generate data
 # ===========================
@@ -183,7 +171,7 @@ condition_model = numpyro.handlers.condition(modelMarket, data={
                             'bSupplyShock':bSupplyShock_true,
                                 })
 # Sample data
-nPriorSamples = 50
+nPriorSamples = 500
 rng_key, rng_key_ = random.split(rng_key)
 prior_predictive = Predictive(condition_model, num_samples=nPriorSamples)
 prior_samples = prior_predictive(rng_key_, N=1)
@@ -193,24 +181,24 @@ assert np.unique(prior_samples['bPrice_demand']) == bPrice_demand_true
 # assert np.allclose(np.round(prior_samples['quant_demand'],1),np.round(prior_samples['quant_supply'],1))
 
 # Get Data required for inference
-# price = prior_samples['price'].squeeze()
-price = prior_samples['price,quant'][:,:,0].squeeze()
-# quant = prior_samples['quant'].squeeze()
-quant = prior_samples['price,quant'][:,:,1].squeeze()
+price = prior_samples['price'].squeeze()
+quant = prior_samples['quant'].squeeze()
+# price = prior_samples['price,quant'][:,:,0].squeeze()
+# quant = prior_samples['price,quant'][:,:,1].squeeze()
 supplyShocks = prior_samples['supplyShocks'].squeeze()
 demandShocks= prior_samples['demandShocks'].squeeze()
-quant
+quant.max()
 # %%
 # Plot generated data
-nPlotSamples = 50 # number of sample to plot
+nPlotSamples = 5 # number of sample to plot
 xPlot = np.linspace(0,15,15).reshape(1,-1)
-yDemand = (
+yDemand = jnp.exp(
             prior_samples['bCons_demand'].reshape(-1,1)+
            prior_samples['bPrice_demand'].reshape(-1,1)*xPlot
            +(prior_samples['bDemandShock'] * demandShocks).reshape(-1,1)
         #    +prior_samples['latDemandShift'].reshape(-1,1)
            )
-ySupply = (
+ySupply = jnp.exp(
             prior_samples['bCons_supply'].reshape(-1,1)+
             prior_samples['bPrice_supply'].reshape(-1,1)*xPlot
            +(prior_samples['bSupplyShock'] * supplyShocks).reshape(-1,1)
@@ -222,9 +210,9 @@ for i in range(nPlotSamples):
     c = next(color)
     ax.plot(xPlot.T,yDemand[i,:],alpha=0.4,color=c)
     ax.plot(xPlot.T,ySupply[i,:],alpha=0.4,color=c)
-    ax.scatter(price[:nPlotSamples],quant[:nPlotSamples],color=c)
-ax.set_ylim(0,5);
-ax.set_xlim(0,15);
+    ax.scatter(jnp.log(price[:nPlotSamples]),quant[:nPlotSamples],color=c)
+ax.set_ylim(0,3);
+ax.set_xlim(0,5);
 
 # %%
 # ==========================
@@ -233,8 +221,9 @@ ax.set_xlim(0,15);
 mcmc = MCMC(NUTS(modelMarket), num_warmup=800, num_samples=500, num_chains=2)
 mcmc.run(random.PRNGKey(0),N=price.shape[0],price=price, 
          quant=quant, 
-         supplyShocks=supplyShocks,
-         demandShocks=demandShocks)
+        #  supplyShocks=supplyShocks,
+         demandShocks=demandShocks
+         )
 mcmc.print_summary(0.89)
 
 samples = mcmc.get_samples()

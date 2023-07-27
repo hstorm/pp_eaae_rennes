@@ -12,6 +12,7 @@ seaborn = "*"
 statsmodels = "*"
 xgboost = "*"
 arviz = "*"
+graphviz = "*"
 
 [dev-packages]
 ipykernel = "*"

@@ -83,14 +83,7 @@ class MLP(nn.Module):
             if self.dropout_rates[iLayer] > 0.0:
                 x = nn.Dropout(self.dropout_rates[iLayer], 
                     deterministic=not is_training)(x)
-        
-        # x = nn.BatchNorm(
-        #     use_bias=False,
-        #     use_scale=False,
-        #     momentum=0.9,
-        #     use_running_average=not is_training,
-        # )(x)
-        
+               
         x = nn.Dense(self.lst_layer[-1])(x).squeeze()
         return x
 
@@ -169,7 +162,7 @@ if __name__ == '__main__':
     Y.shape
 
     # %%
-    # Estimate with SVI
+    # Estimate with SVI (NUTS is in principle possible but not useful for larger NNs)
     rng_key, rng_key_ = random.split(rng_key)
     guide = autoguide.AutoNormal(modelPP_NN, 
                         init_loc_fn=init_to_feasible)
@@ -207,6 +200,96 @@ if __name__ == '__main__':
     aa.shape
     assert np.allclose(aa[:,0],post_predict['logits'][0,:],atol=1e-5)
 
+    # =============================================================================        
+    # =============================================================================        
+    # =============================================================================        
+    """Check if training work for a "deep" net with 2 hidden layers 
+    """
+    # %%
+    hyperparams = {}
+    hyperparams['N'] = 1000000
+    hyperparams['K'] = 5
+    hyperparams['rng_key'] = rng_key
+    hyperparams['batch_size'] = hyperparams['N']
+    # Specify a degenerated NN with one layer and no dropout, similar to a logistic regression
+    hyperparams['lst_layer'] = [512,64,1]
+    hyperparams['lst_dropout'] = [0.0,0.0]
+
+    X = np.random.normal(0, 1.0, size=(hyperparams['N'],hyperparams['K']))
+
+    # Run the DGP  once to get values for latent variables
+    rng_key, rng_key_ = random.split(rng_key)
+    lat_predictive = Predictive(modelPP_NN, num_samples=1)
+    lat_samples = lat_predictive(rng_key_,X=X,hyperparams=hyperparams)
+
+    coefTrue = {s:lat_samples[s][0] for s in lat_samples.keys() if s not in ['Y','logits']}
+    
+    # %%
+    # # Condition the model and get predictions for Y
+    condition_model = numpyro.handlers.condition(modelPP_NN, data=coefTrue)
+    nPriorSamples = 1
+    prior_predictive = Predictive(condition_model, num_samples=nPriorSamples, return_sites=["Y",'logits'])
+    prior_samples = prior_predictive(rng_key_,X=X,hyperparams=hyperparams)
+    Y = prior_samples['Y'].squeeze()
+    logits_true = prior_samples['logits'].squeeze()
+    print('Mean Y',np.mean(Y))
+    print('Mean logits',np.mean(logits_true))
+    print('Min,Max,Mean logits',np.min(logits_true),np.max(logits_true),np.mean(logits_true))
+    plt.hist(Y[:10000],bins=100);
+    # %%  
+    Xc = sm.add_constant(X)  
+    b_hat_ols = np.linalg.inv(Xc.T@Xc)@Xc.T@Y
+    y_hat_ols = Xc @ b_hat_ols
+    
+    plt.scatter(Y,y_hat_ols,s=0.1)
+    # calculate R2
+    import sklearn.metrics as metrics
+    r2_ols = metrics.r2_score(Y, y_hat_ols)
+    print('R2 OLS',r2_ols)
+    
+    
+    # %%
+    # numpyro.render_model(modelPP_NN, model_args=(hyperparams,X),
+    #                      render_distributions=True)
+    # %%
+    # Estimate with SVI
+    rng_key, rng_key_ = random.split(rng_key)
+    guide = autoguide.AutoNormal(modelPP_NN, 
+                        init_loc_fn=init_to_feasible)
+
+    # hyperparams['lst_layer'] = [512,64,1]
+    hyperparams['lst_layer'] = [256,32,1]
+    hyperparams['batch_size'] = 512
+    hyperparams['lst_dropout'] = [0.2,0.1]
+
+    # svi = SVI(modelPP_NN,guide,optim.Adam(0.01),Trace_ELBO())
+    svi = SVI(modelPP_NN,guide,optim.Adam(0.01),TraceMeanField_ELBO())
+    svi_result = svi.run(rng_key_, 10000,X=X,Y=Y,hyperparams=hyperparams,is_training=True)
+    plt.plot(svi_result.losses)
+    svi_params = svi_result.params
+    # %%
+    # Get samples from the posterior
+    predictive = Predictive(guide, params=svi_params, num_samples=500)
+    samples_svi = predictive(random.PRNGKey(1), X=X,hyperparams=hyperparams,is_training=False)
+    samples_svi.keys()
+    # %%
+    # Get posterior predictions using samples from the posterior
+    hyperparams['batch_size'] = hyperparams['N']
+    predictivePosterior = Predictive(modelPP_NN, posterior_samples=samples_svi, return_sites=['Y',"logits"])
+    post_predict = predictivePosterior(random.PRNGKey(1), X=X, hyperparams=hyperparams,is_training=False)
+    post_predict.keys()
+
+    # %%
+    fig, ax = plt.subplots(figsize=(6, 6))
+    # ax.scatter(logits_true,post_predict['logits'].mean(axis=0),s=0.1)
+    # ax.set_ylim([logits_true.min(),logits_true.max()]);
+    # ax.set_xlim([logits_true.min(),logits_true.max()]);
+    ax.scatter(Y,post_predict['Y'].mean(axis=0),s=0.1)
+    # ax.set_ylim([Y.min(),Y.max()]);
+    # ax.set_xlim([Y.min(),Y.max()]);
+
+    r2_svi = metrics.r2_score(Y, post_predict['Y'].mean(axis=0))
+    print('R2 SVI',r2_svi)
 
 
 # %%

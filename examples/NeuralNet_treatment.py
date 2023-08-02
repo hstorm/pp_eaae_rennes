@@ -45,6 +45,86 @@ numpyro.set_platform("gpu")
 # %%
 rng_key = random.PRNGKey(1)
 
+
+# %%
+def modelPotOutcome(X, T=None, Y=None):
+    
+    alpha_out = numpyro.sample("alpha_out", dist.Normal(0.,1).expand([X.shape[1]]))
+    beta_treat = numpyro.sample("beta_treat", dist.Normal(0.,1).expand([X.shape[1]]))
+    sigma_Y = numpyro.sample("sigma_Y", dist.Exponential(1))
+
+    Y0 = X @ alpha_out 
+    tau = X @ beta_treat 
+    Y1 = Y0 + tau 
+    logits_T = Y1 - Y0 
+    T = numpyro.sample("T", dist.Bernoulli(logits=logits_T), obs=T)
+    numpyro.sample("Y", dist.Normal(Y1*T + Y0*(1-T), sigma_Y), obs=Y)
+    
+    numpyro.deterministic("Y0", Y0)
+    numpyro.deterministic("Y1", Y1)
+        
+
+
+# %%
+def modelLinearEffects():
+    # %%
+    N = 10000
+    K = 5
+    X = np.random.normal(0, 1.0, size=(N,K))
+
+    # Run the DGP  once to get values for latent variables
+    rng_key, rng_key_ = random.split(rng_key)
+    lat_predictive = Predictive(modelPP_treament, num_samples=1)
+    lat_samples = lat_predictive(rng_key_,X=X)
+    lat_samples['Y0'].shape
+
+    # %%
+    # # Condition the model and get predictions for Y
+    condition_model = numpyro.handlers.condition(modelPP_treament, data=coefTrue)
+    nPriorSamples = 1
+    prior_predictive = Predictive(condition_model, num_samples=nPriorSamples)
+    prior_samples = prior_predictive(rng_key_,X=X)
+    Y = prior_samples['Y'].squeeze()
+    T = prior_samples['T'].squeeze()
+    mu_Y0 = prior_samples['Y0'].squeeze()
+    mu_Y1 = prior_samples['Y1'].squeeze()
+    beta_true = prior_samples['beta_treat'].squeeze()
+    alpha_true = prior_samples['alpha_out'].squeeze()
+    print('avg treatment effect',np.mean(mu_Y1-mu_Y0))
+    plt.hist(mu_Y1-mu_Y0,bins=100);
+    
+    # %%
+    # Estimate with SVI
+    rng_key, rng_key_ = random.split(rng_key)
+    guide = autoguide.AutoNormal(modelPP_treament, 
+                        init_loc_fn=init_to_feasible)
+
+    # svi = SVI(modelPP_treament,guide,optim.Adam(0.01),Trace_ELBO())
+    svi = SVI(modelPP_treament,guide,optim.Adam(0.01),TraceMeanField_ELBO())
+    svi_result = svi.run(rng_key_, 10000,X=X,T=T,Y=Y)
+    plt.plot(svi_result.losses)
+    svi_params = svi_result.params
+    # %%
+    # Get samples from the posterior
+    predictive = Predictive(guide, params=svi_params, num_samples=500)
+    samples_svi = predictive(random.PRNGKey(1), X=X)
+    samples_svi.keys()
+    # %%
+    # Get posterior predictions using samples from the posterior
+    hyperparams['batch_size'] = hyperparams['N']
+    predictivePosterior = Predictive(modelPP_treament, posterior_samples=samples_svi)
+    post_predict = predictivePosterior(random.PRNGKey(1), X=X)
+    post_predict.keys()
+    
+    print('true avg treatment effect',np.mean(mu_Y1-mu_Y0))
+    print('estimated avg treatment effect',np.mean(post_predict['mu_Y1']-post_predict['mu_Y0']))
+    
+    print('alpha_true',alpha_true)
+    print('alpha_hat',np.mean(samples_svi['alpha_out'],axis=0))
+    
+    print('beta_true',beta_true)
+    print('beta_hat',np.mean(samples_svi['beta_treat'],axis=0))
+
 # %%
 # Useful source: https://omarfsosa.github.io/bayesian_nn
 
@@ -99,10 +179,6 @@ class MLP(nn.Module):
 
 
 
-    assert len(lst_layer_potOut) == len(lst_dropout_potOut) + 1
-    assert len(lst_layer_potOut) == len(lst_use_bias_potOut) + 1
-    assert len(lst_layer_treatEffect) == len(lst_dropout_treatEffect) + 1
-    assert len(lst_layer_treatEffect) == len(lst_use_bias_treatEffect) + 1
 # %%
 def modelPP_NN_treament(hyperparams, X, T=None, Y=None, is_training=False):
     
@@ -113,6 +189,11 @@ def modelPP_NN_treament(hyperparams, X, T=None, Y=None, is_training=False):
     lst_layer_treatEffect = hyperparams['lst_layer_treatEffect']
     lst_dropout_treatEffect = hyperparams['lst_dropout_treatEffect']
     lst_use_bias_treatEffect = hyperparams['lst_use_bias_treatEffect']
+    
+    assert len(lst_layer_potOut) == len(lst_dropout_potOut) + 1
+    assert len(lst_layer_potOut) == len(lst_use_bias_potOut) + 1
+    assert len(lst_layer_treatEffect) == len(lst_dropout_treatEffect) + 1
+    assert len(lst_layer_treatEffect) == len(lst_use_bias_treatEffect) + 1
 
     # Specify a NN for the potential outcomes without the treatment effect
     nn_potOut = random_flax_module("nn_potOut",
@@ -156,9 +237,7 @@ def modelPP_NN_treament(hyperparams, X, T=None, Y=None, is_training=False):
         numpyro.deterministic("mu_P1", mu_P1)
         
 
-
-# %%
-
+    
 # %%
 if __name__ == '__main__':
   """Check if training work for a "deep" net with 2 hidden layers 
@@ -283,4 +362,15 @@ if __name__ == '__main__':
     plt.scatter(mu_P1,post_predict['mu_P1'].mean(axis=0),s=0.1)
     print('true avg treatment effect',np.mean(mu_P1-mu_P0))
     print('estimated avg treatment effect',np.mean(post_predict['mu_P1']-post_predict['mu_P0']))
+    # %%
+    mu_diff_predict = np.mean(post_predict['mu_P1']-post_predict['mu_P0'],axis=0)
+    aa = pd.DataFrame(np.hstack([X,mu_diff_predict[:,None]]),
+                      columns=[f'X{i}' for i in range(0,X.shape[1])]+['mu_diff_predict'])
+    x_vars = [f'X{i}' for i in range(0,X.shape[1])]
+    y_vars = ["mu_diff_predict"]
+    
+    g = sns.PairGrid(aa,x_vars=x_vars, y_vars=y_vars)
+    g.map(sns.scatterplot,s=0.1)
+    for i in range(0,X.shape[1]):
+        g.axes[0,1].set_ylim(-10,10)
 # %%

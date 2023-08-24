@@ -72,12 +72,18 @@ X = dfL_train.loc[dfL_train['crop']=='Winterweizen',lstColX].values
 Y = dfL_train.loc[dfL_train['crop']=='Winterweizen','yield_scaled'].values    
 
 # %%
+def f(x,y=2):
+    return x+y
+f(x=1,y=4)
+
+# %%
 # =============================================================================
 # Define most basic linear regression model
 # =============================================================================
 
 def model(X,sigma_b, Y=None):
     b = numpyro.sample('b', dist.Normal(0,sigma_b).expand([X.shape[1]]))
+    # b = numpyro.sample('b', dist.Uniform(0,1).expand([X.shape[1]]))
     sigma = numpyro.sample('sigma', dist.Exponential(1))
     numpyro.sample('Y',dist.Normal(X @ b,sigma), obs=Y)
 # =============================================================================

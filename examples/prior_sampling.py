@@ -72,12 +72,18 @@ X = dfL_train.loc[dfL_train['crop']=='Winterweizen',lstColX].values
 Y = dfL_train.loc[dfL_train['crop']=='Winterweizen','yield_scaled'].values    
 
 # %%
+def f(x,y=2):
+    return x+y
+f(x=1,y=4)
+
+# %%
 # =============================================================================
 # Define most basic linear regression model
 # =============================================================================
 
 def model(X,sigma_b, Y=None):
     b = numpyro.sample('b', dist.Normal(0,sigma_b).expand([X.shape[1]]))
+    # b = numpyro.sample('b', dist.Uniform(0,1).expand([X.shape[1]]))
     sigma = numpyro.sample('sigma', dist.Exponential(1))
     numpyro.sample('Y',dist.Normal(X @ b,sigma), obs=Y)
 # =============================================================================
@@ -90,12 +96,16 @@ rng_key, rng_key_ = random.split(rng_key)
 prior_predictive = Predictive(model, num_samples=nPriorSamples)
 prior_samples = prior_predictive(rng_key_,X=X,sigma_b=sigma_b)
 # 
-fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+fig, ax = plt.subplots(1, 1, figsize=(6, 4))
 ax.hist(prior_samples['Y'][:,0]*scale_train['Winterweizen_yield_std']+scale_train['Winterweizen_yield_mean'],bins=100,
         density=True,
         color='grey');
-ax.set_title(f'b~N(0,{sigma_b})')
-ax.set_xlabel('Winter Wheat Yield [dt/ha]')
+ax.set_title(f'b~N(0,{sigma_b})', fontsize=20)
+ax.set_xlabel('Yield [dt/ha]', fontsize=20)
+ax.get_yaxis().set_visible(False)
+# Set tick font size
+for label in (ax.get_xticklabels() + ax.get_yticklabels()):
+	label.set_fontsize(20)
 # %%
 x_range_scaled = np.linspace(-5,5,100)
 # x_mean = X.mean(axis=0)*scale_train[lstColX].std(axis=0)+scale_train[lstColX].mean(axis=0)
@@ -111,10 +121,13 @@ for i in range(1,300):
 
     ax.plot(x_range,y_hat,color='k',alpha=0.2)
 
-ax.set_title(f'b~N(0,{sigma_b})')    
-ax.set_xlabel('Soil Rating [0-100]')
-ax.set_ylabel('Winter Wheat Yield [dt/ha]')
+ax.set_title(f'b~N(0,{sigma_b})', fontsize=20)    
+ax.set_xlabel('Soil Rating [0-100]', fontsize=20)
+ax.set_ylabel('Yield [dt/ha]', fontsize=20)
 ax.set_xlim([0,100])
+# Set tick font size
+for label in (ax.get_xticklabels() + ax.get_yticklabels()):
+	label.set_fontsize(20)
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(8, 4))
 ax.hist(prior_samples['b'][:,0],bins=100);
@@ -138,22 +151,20 @@ azMCMC= azMCMC.assign_coords({
                     })
 az.summary(azMCMC)
 # %%
-az.plot_pair(azMCMC,
-            kind='kde',
-            var_names=['b'],
-            coords={'b_dim_0':["MAI_25", "JUN_25", "JUL_25", "AUG_25"]},
-            divergences=True,
-            textsize=18);
-# %%
-# Get samples
+# Get posterior samples
 post_samples = mcmc.get_samples()
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(8, 4))
 ax.hist(prior_samples['b'][:,0],bins=100,density=True, label='prior', color='grey');
 ax.hist(post_samples['b'][:,0],bins=100,density=True, label='posterior', color='black');
-ax.set_title(f'b~N(0,{sigma_b})')
-ax.set_xlabel(f"b[{lstColX[0]}]")
+ax.set_title(f'b~N(0,{sigma_b})', fontsize=20)
+ax.set_xlabel(f"b[{lstColX[0]}]", fontsize=20)
+ax.set_xlim([-3,3])
+ax.get_yaxis().set_visible(False)
 ax.legend()
+# Set tick font size
+for label in (ax.get_xticklabels() + ax.get_yticklabels()):
+	label.set_fontsize(20)
 # %%
 x_range_scaled = np.linspace(-5,5,100)
 # x_mean = X.mean(axis=0)*scale_train[lstColX].std(axis=0)+scale_train[lstColX].mean(axis=0)
@@ -161,6 +172,8 @@ x_mean_scaled = X.mean(axis=0)
 x_plot = np.repeat(x_mean_scaled.reshape(1,-1),100,axis=0)
 x_plot[:,0] = x_range_scaled
 fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+
+
 x_range = x_range_scaled*scale_train['bodenzahl_std']+scale_train['bodenzahl_mean']
 for i in range(1,300):
     y_hat_scaled = x_plot @ post_samples['b'][i,:].reshape(-1,1) 
@@ -170,9 +183,17 @@ for i in range(1,300):
 
     ax.plot(x_range,y_hat,color='k',alpha=0.2)
 
-ax.set_title(f'b~N(0,{sigma_b})')    
-ax.set_xlabel('Soil Rating [0-100]')
-ax.set_ylabel('Winter Wheat Yield [dt/ha]')
+ax.set_title(f'b~N(0,{sigma_b})', fontsize=20)    
+ax.set_xlabel('Soil Rating [0-100]', fontsize=20)
+ax.set_ylabel('Yield [dt/ha]', fontsize=20)
 ax.set_xlim([0,100])
+# Set tick font size
+for label in (ax.get_xticklabels() + ax.get_yticklabels()):
+	label.set_fontsize(20)
 
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+ax.hist(X[:,0]*scale_train['bodenzahl_std']+scale_train['bodenzahl_mean'],density=True, color='grey');
+ax.set_title('Observed Soil Rating')
+ax.set_xlim([0,100])
 # %%

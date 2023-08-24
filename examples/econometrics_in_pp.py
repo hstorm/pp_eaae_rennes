@@ -1,7 +1,5 @@
 # %%
 import os
-
-import os
 os.environ["CUDA_VISIBLE_DEVICES"]="1,2"
 
 import arviz as az
@@ -37,6 +35,8 @@ az.style.use("arviz-darkgrid")
 # numpyro.set_platform("cpu")
 numpyro.set_platform("gpu")
 # numpyro.set_host_device_count(2)
+
+os.chdir("/home/storm/Research/pp_eaae_rennes")
 
 
 
@@ -248,7 +248,7 @@ az.plot_pair(azSVI,
 # =============================================================================
 # Estimate linear model with real data
 # =============================================================================
-from src.models.numpyro_yield import getData
+from util.load_yield_data import getData
 dfL_train, dfL_test, lstCatCrop, lstCatNUTS3, lstSmi25, lstSmi180, scale_train = getData()   
 
 lstColX = ['bodenzahl_scaled',
@@ -262,8 +262,9 @@ lstColX = ['bodenzahl_scaled',
             'MAI_25',
             'JUN_25',
             'JUL_25',
-            'AUG_25',
-            'SEP_25'] 
+            'AUG_25'
+            # 'SEP_25'
+            ] 
 
 
 dfWheat_train = dfL_train.loc[dfL_train['crop']=='Winterweizen',:]

@@ -26,19 +26,18 @@ from numpyro.infer import MCMC, NUTS, Predictive
 
 # SVI 
 from numpyro.infer import Predictive, SVI, Trace_ELBO
-from numpyro.infer.autoguide import AutoLaplaceApproximation, AutoDiagonalNormal,AutoMultivariateNormal
+from numpyro.infer.autoguide import AutoLaplaceApproximation, AutoDiagonalNormal,AutoMultivariateNormal, AutoNormal
 import numpyro.optim as optim
 
 # if "SVG" in os.environ:
 #     %config InlineBackend.figure_formats = ["svg"]
 az.style.use("arviz-darkgrid")
 # numpyro.set_platform("cpu")
-numpyro.set_platform("gpu")
+# numpyro.set_platform("gpu")
 # numpyro.set_host_device_count(2)
 
-os.chdir("/home/storm/Research/pp_eaae_rennes")
-
-
+# Adjust to own setting (correct for VS code devcontainer)
+os.chdir("/workspaces/pp_eaae_rennes/")
 
 # %%
 rng_key = random.PRNGKey(1)
@@ -118,16 +117,6 @@ mcmcPlate.print_summary()
 # =============================================================================
 # Estimate same model with SVI
 # =============================================================================
-# Own guide for linear regression model
-# FIXME this is not working yet
-def own_guide_LR(X,Y=None):
-    b_loc = numpyro.param('b_loc', jnp.zeros(k))
-    b_scale = numpyro.param('b_scale', jnp.ones(k), constraint=dist.constraints.positive)
-    sigma_loc = numpyro.param('sigma_loc', 1., constraint=dist.constraints.positive)
-    b = numpyro.sample('b', dist.Normal(b_loc, b_scale).expand([k]))
-    sigma = numpyro.sample('sigma', dist.Exponential(sigma_loc))
-
-# %%
 rng_key, rng_key_ = random.split(rng_key)
 guide = AutoLaplaceApproximation(model)
 
@@ -208,11 +197,10 @@ az.plot_pair(azMCMC,
 # Do the same with SVI
 rng_key, rng_key_ = random.split(rng_key)
 # Try out different auto guides
-# guide = AutoLaplaceApproximation(model)
+guide = AutoLaplaceApproximation(model)
+# guide = AutoMultivariateNormal(model)
 # Note that AutoDiagonalNormal does not capture correlation between b3 and b4
 # guide = AutoDiagonalNormal(model)
-guide = AutoMultivariateNormal(model)
-# guide = own_guide_LR
 
 svi = SVI(model,guide,optim.Adam(0.1),Trace_ELBO())
 svi_result = svi.run(rng_key_, 1000, X=X_multicoll, Y=Y)
@@ -229,8 +217,6 @@ sigma_svi = svi_params['auto_loc'][-1]
 # samples_svi = predictive(random.PRNGKey(1), X=X_multicoll, Y=Y)
 samples_svi = guide.sample_posterior(random.PRNGKey(1), svi_params, (1000,))
 numpyro.diagnostics.print_summary(samples_svi, prob=0.89, group_by_chain=False)
-# %%
-plt.hist(samples_svi['b'][:,0],bins=50);
 # %%
 # Transfrom prediction data to az.inference data
 s = {k:np.expand_dims(v.squeeze(),axis=0) 
@@ -292,7 +278,6 @@ az.plot_pair(azMCMC,
             divergences=True,
             textsize=18);
 
-# %%
 # %%
 # =============================================================================
 # Logit model
@@ -420,10 +405,7 @@ jnp.outer(Sigma, Sigma) * Rho
 
 # %%
 # =============================================================================
-# Model 1: Model with random intercepts and slopes
-# =============================================================================
-# =============================================================================
-# Model 1: Model with random intercepts and slopes
+# Example Model 1: Model with random intercepts and slopes
 # =============================================================================
 def model_M1(soil,smi,yield_crop=None):
 
@@ -443,7 +425,7 @@ def model_M1(soil,smi,yield_crop=None):
     
 # %%
 # =============================================================================
-# Model 2: Model with random intercepts and slopes
+# Example Model 2: Model with random intercepts and slopes
 # =============================================================================
 def model_M2(soil,smi = None, smiDiff = None,yield_crop=None):
 
@@ -468,76 +450,3 @@ def model_M2(soil,smi = None, smiDiff = None,yield_crop=None):
     mu = betaSoil*soil + Xsmi + XsmiDiff
 
     numpyro.sample('yield',dist.Normal(mu,sigma_yield),obs=yield_crop)
-# %%
-rng_key = random.PRNGKey(0)
-
-dfWheat_train = dfL_train.loc[dfL_train['crop']=='Winterweizen',:]
-
-data = dict(soil=dfWheat_train['bodenzahl_scaled'].values,
-            smi=dfWheat_train[lstSmiMonth].values,
-            # smi_diff=dfWheat_train[lstSmiDiff].values,
-            yield_crop=dfWheat_train['yield_scaled'].values)
-
-
-rng_key, rng_key_ = random.split(rng_key)
-kernel = NUTS(model_M1)
-mcmcM1 = MCMC(kernel, num_samples=800, num_warmup=1000, num_chains=3)
-mcmcM1.run(rng_key_, **data)
-
-# Print summary
-mcmcM1.print_summary()
-# Get samples
-samples = mcmcM1.get_samples()
-
-# %%
-# Transform samples to arviz format
-azMCMC_M1 = az.from_numpyro(mcmcM1)
-# azMCMC= azMCMC.assign_coords({'betaSmi_dim_0':lstSmiMonth})
-azMCMC_M1= azMCMC_M1.assign_coords({
-                            'betaSmi_dim_0':lstSmiMonth,
-                              })
-az.plot_forest(azMCMC_M1,combined=True, ridgeplot_overlap=1);
-# %%
-# =============================================================================
-# Model 2
-# =============================================================================
-data2 = dict(soil=dfWheat_train['bodenzahl_scaled'].values,
-            smi=dfWheat_train[lstSmiMonth].values,
-            smiDiff=dfWheat_train[lstSmiDiff].values,
-            yield_crop=dfWheat_train['yield_scaled'].values)
-
-
-rng_key, rng_key_ = random.split(rng_key)
-kernel = NUTS(model_M2)
-mcmcM2 = MCMC(kernel, num_samples=800, num_warmup=1000, num_chains=3)
-mcmc.run(rng_key_, **data2)
-
-# Print summary
-mcmc.print_summary()
-# Get samples
-samples = mcmc.get_samples()
-
-# %%
-# Transform samples to arviz format
-azMCMC = az.from_numpyro(mcmc)
-# azMCMC= azMCMC.assign_coords({'betaSmi_dim_0':lstSmiMonth})
-azMCMC= azMCMC.assign_coords({
-                            'betaSmi_dim_0':lstSmiMonth,
-                            'betaSmiDiff_dim_0':lstSmiDiff,
-                              })
-az.plot_forest(azMCMC,combined=True, ridgeplot_overlap=1);
-# %%
-# %%
-# rename columns
-dfWeizen
-# %%
-import seaborn as sns
-sns.pairplot(df, x_vars=[strY], y_vars=[strY]+lstX);
-# %%
-sns.pairplot(df, x_vars=[strY], y_vars=lstX);
-# %%
-sns.pairplot(dfWeizen, x_vars=[strY], y_vars=lstSmiMonthDiff);
-# %%
-sns.pairplot(df, x_vars=lstX, y_vars=lstX);
-# %%
-dfWeizen['MAI_25'].hist(bins=100)

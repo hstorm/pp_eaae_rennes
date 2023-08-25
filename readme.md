@@ -13,6 +13,8 @@ Questions: *hugo.storm@ilr.uni-bonn.de*
 
 *To run the examples, check the notes below on how to setup a python environment.*
 
+All examples are implemented in [numpyro](https://num.pyro.ai/en/stable/)
+
 1. Common econometrics model implemented in numpyro [econometrics_in_pp.py](https://github.com/hstorm/pp_eaae_rennes/blob/master/examples/econometrics_in_pp.py)
 
 2. Cumulative prospect theory model implemented in numpyro [cumulative_prospect_theory.py](https://github.com/hstorm/pp_eaae_rennes/blob/master/examples/cumulative_prospect_theory.py)

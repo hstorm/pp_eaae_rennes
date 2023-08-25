@@ -40,6 +40,10 @@ az.style.use("arviz-darkgrid")
 numpyro.set_platform("cpu")
 # numpyro.set_platform("gpu")
 
+# Adjust to own setting (correct for VS code devcontainer)
+os.chdir("/workspaces/pp_eaae_rennes/")
+
+
 # %%
 def load_data():
     # import data

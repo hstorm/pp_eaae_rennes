@@ -1,4 +1,10 @@
 # %%
+""" Example of Neural Nets in numpyro
+this example here  illustrate how to estimate a 
+degnerated neural network equivalent to a logit model. 
+(i.e. no hidden layer). This implementation can be 
+extened to more useful NN (see also example NeuralNet_treatment.py)
+"""
 import os
 
 import os

@@ -20,9 +20,9 @@ Questions: *hugo.storm@ilr.uni-bonn.de*
 
 [Other examples, not considered in keynote talk]
 
-5. Logit model implemented with numpyro neural network tools (logit_as_neuralnet.py)[https://github.com/hstorm/pp_eaae_rennes/blob/master/examples/logit_as_neuralnet.py]
+5. Logit model implemented with numpyro neural network tools [logit_as_neuralnet.py](https://github.com/hstorm/pp_eaae_rennes/blob/master/examples/logit_as_neuralnet.py)
 
-6. Market model (example incomplete!) (market_model.py)[https://github.com/hstorm/pp_eaae_rennes/blob/master/examples/market_model.py]
+6. Market model (example incomplete!) [market_model.py](https://github.com/hstorm/pp_eaae_rennes/blob/master/examples/market_model.py)
 
 ## EAAE Poster: Probabilistic Programming policy application 
 

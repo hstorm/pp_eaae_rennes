@@ -1,7 +1,5 @@
 # %%
 import os
-
-import os
 os.environ["CUDA_VISIBLE_DEVICES"]="1,2"
 
 import arviz as az
@@ -16,7 +14,6 @@ import statsmodels.api as sm
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score
 from xgboost import XGBRegressor
-
 
 import flax.linen as nn
 import jax
@@ -35,8 +32,6 @@ from numpyro.infer import Predictive, SVI, Trace_ELBO
 from numpyro.contrib.module import flax_module, random_flax_module
 from numpyro.infer import SVI, TraceMeanField_ELBO
 
-# if "SVG" in os.environ:
-#     %config InlineBackend.figure_formats = ["svg"]
 az.style.use("arviz-darkgrid")
 numpyro.set_platform("cpu")
 # numpyro.set_platform("gpu")
@@ -45,10 +40,15 @@ numpyro.set_platform("cpu")
 # %%
 rng_key = random.PRNGKey(1)
 
-
 # %%
 def modelPotOutcome(X, T=None, Y=None):
-    
+    """Define a simple potential outcome model
+
+    Args:
+        X (np array): Explanatory variables (standardized)
+        T (np array, optional): Treatment status. Defaults to None.
+        Y (np array, optional): Observed outcome. Defaults to None.
+    """
     alpha_out = numpyro.sample("alpha_out", dist.Normal(0.,1).expand([X.shape[1]]))
     beta_treat = numpyro.sample("beta_treat", dist.Normal(0.,1).expand([X.shape[1]]))
     sigma_Y = numpyro.sample("sigma_Y", dist.Exponential(1))
@@ -64,7 +64,17 @@ def modelPotOutcome(X, T=None, Y=None):
         
 # %%
 def modelPotOutcome_poly(X, polyDegree=1, stepFunction=False, T=None, Y=None):
-    
+    """Extented potential outcome model with polynomial terms and 
+    step function for the treatment effect
+
+    Args:
+        X (_type_): Explanatory variables (standardized)
+        polyDegree (int, optional): Degree of polynomial. Defaults to 1.
+        stepFunction (bool, optional): Indicator to use a step function for 
+            first explanatory variable. Defaults to False.
+        T (np array, optional): Treatment status. Defaults to None.
+        Y (np array, optional): Observed outcome. Defaults to None.
+    """
     alpha_out = numpyro.sample("alpha_out", dist.Normal(0.,1).expand([X.shape[1]]))
     sigma_Y = numpyro.sample("sigma_Y", dist.Exponential(1))
     
@@ -80,11 +90,6 @@ def modelPotOutcome_poly(X, polyDegree=1, stepFunction=False, T=None, Y=None):
 
     if stepFunction:
         betaStep_treat = numpyro.sample("betaStep_treat", dist.Normal(0.,10)) 
-        # betaStep_treat = numpyro.sample("betaStep_treat", dist.Normal(0.,1).expand([1,X.shape[1]])) 
-        # print('betaStep_treat.shape',betaStep_treat.shape)
-        # print('tau.shape',tau.shape)
-        # print('X.shape',X.shape)
-        # print('(betaStep_treat * (X>0.0)).shape',(betaStep_treat * (X>0.0)).shape)
         tau = tau + betaStep_treat * (X[:,0]>0.0)
 
     Y0 = X @ alpha_out 
@@ -127,14 +132,13 @@ class MLP(nn.Module):
         assert len(self.lst_layer) == len(self.use_bias) + 1
         
         for iLayer in range(0,len(self.lst_layer[:-1])):
-            # x = nn.tanh(nn.Dense(self.lst_layer[iLayer])(x))
-            # x = nn.relu(nn.Dense(self.lst_layer[iLayer])(x))
             x = nn.leaky_relu(nn.Dense(self.lst_layer[iLayer],use_bias=self.use_bias[iLayer])(x))
         
             if self.dropout_rates[iLayer] > 0.0:
                 x = nn.Dropout(self.dropout_rates[iLayer], 
                     deterministic=not is_training)(x)
         
+        # FIXME batch norm not implemented and not yet easily working with numpyro
         # x = nn.BatchNorm(
         #     use_bias=False,
         #     use_scale=False,
@@ -149,7 +153,16 @@ class MLP(nn.Module):
 
 # %%
 def modelPP_NN_treament(hyperparams, X, T=None, Y=None, is_training=False):
-    
+    """Potential outcome model using neural networks (dense MPL) for 
+    the treatment effect and the not treated outcome
+
+    Args:
+        hyperparams (dict): dict to specify number of layers, dropout, batchsize,
+        X (_type_): Explanatory variables (standardized)
+        T (np array, optional): Treatment status. Defaults to None.
+        Y (np array, optional): Observed outcome. Defaults to None.
+        is_training (bool, optional): Set to true for inference. Defaults to False.
+    """
     lst_lay_Y0 = hyperparams['lst_lay_Y0']
     lst_drop_Y0 = hyperparams['lst_drop_Y0']
     lst_bias_Y0 = hyperparams['lst_bias_Y0']
@@ -202,7 +215,6 @@ def modelPP_NN_treament(hyperparams, X, T=None, Y=None, is_training=False):
         numpyro.deterministic("tau", tau)
         numpyro.deterministic("Y0", Y0)
         numpyro.deterministic("Y1", Y1)
-        
 
 
 # %%        
@@ -211,7 +223,20 @@ def data_generating(rng_key=rng_key,
                     N = 10000,
                     K = 5,
                     X=None): 
-    # %
+    """Helper function to generate data using different model types.
+    Creates some basic plots to illustrate DGP
+
+    Args:
+        rng_key (_type_, optional): numpyro rng key. Defaults to rng_key.
+        modelTypeDataGen (str, optional): Name of model type. Defaults to 'linear'.
+        N (int, optional): number of samples. Defaults to 10000.
+        K (int, optional): number of explanatory variables (ignored if X is provided). Defaults to 5.
+        X (_type_, optional): Predefined exlanatory variables. Defaults to None.
+
+    Raises:
+        ValueError: if modelTypeDataGen is not recognized
+
+    """
     # Generate X if not provided    
     if X is None:
         X = np.random.normal(0, 1.0, size=(N,K))
@@ -246,7 +271,7 @@ def data_generating(rng_key=rng_key,
         datX_conditioned = {'X':X, 'hyperparams':hyperparams}
     else:
         raise ValueError('modelTypeDataGen not recognized')
-    #%
+
     # Run the DGP  once to get values for latent variables
     rng_key, rng_key_ = random.split(rng_key)
     lat_predictive = Predictive(model, num_samples=1)
@@ -257,7 +282,6 @@ def data_generating(rng_key=rng_key,
                 lat_samples.keys() if s not in ['Y','T','Y0', 'Y1','b_treat']}
     coefTrue.keys()
     
-    #%
     # Condition the model and get predictions for Y
     condition_model = numpyro.handlers.condition(model, data=coefTrue)
     conditioned_predictive = Predictive(condition_model, num_samples=1)
@@ -285,8 +309,6 @@ def data_generating(rng_key=rng_key,
         beta_true = {key:val for key, val in prior_samples.items() if 'MLP_tau' in key}
         alpha_true = {key:val for key, val in prior_samples.items() if 'MLP_Y0' in key}
 
-    
-    #%
     # Plot true Treatment heterogneity, for first covariate
     k = 0
     x_percentile = np.percentile(X[:,k],q=[2.5,97.5])
@@ -314,7 +336,7 @@ def data_generating(rng_key=rng_key,
     # Set tick font size
     for label in (ax.get_xticklabels() + ax.get_yticklabels()):
         label.set_fontsize(20)
-    #%    
+
     # Plot hist of Y0 and Y1
     fig, ax = plt.subplots()
     ax.hist(Y[T==0][:10000],bins=100,density=True,color='green',alpha=0.5,label='T=0');
@@ -330,36 +352,14 @@ def data_generating(rng_key=rng_key,
     g = sns.PairGrid(aa,x_vars=x_vars, y_vars=y_vars)
     g.map(sns.scatterplot,s=0.1)
     
-
-    
     return Y, Y_unscaled, Y_mean, Y_std, T, X, Y0, Y1, beta_true, alpha_true, conditioned_predictive, datX_conditioned
-
-# %%    
-def prior_sampling():
-    # FIXME not yet implemented
-    # %
-    nPriorSamples = 1000
-    # Prior sampling
-    rng_key, rng_key_ = random.split(rng_key)
-    conditioned_predictive = Predictive(modelPotOutcome, num_samples=nPriorSamples)
-    prior_samples = conditioned_predictive(rng_key_,X=X)
-    # %
-    fig, ax = plt.subplots()
-    ax.hist(prior_samples['T'].mean(axis=0),bins=100)
-    ax.set_title('hist of prior treatement share')
-    
-    fig, ax = plt.subplots()
-    prior_tau = prior_samples['Y1']-prior_samples['Y0']
-    ax.hist(prior_tau.mean(axis=0),bins=100)
-    ax.set_title('hist of prior avg treatment effects (tau)')
-    
 
 # %%
 if __name__ == '__main__':
 
     # %%
     # =====================================================
-    # Generate the data
+    # Generate the data, set modelType to desired name
     # =====================================================
     # modelTypeDataGen = 'linear'
     # modelTypeDataGen = 'poly2'
@@ -378,7 +378,7 @@ if __name__ == '__main__':
 
     # %%
     # =====================================================
-    # Estimate model
+    # Estimate model, set inference model to desired model
     # =====================================================
     # modelTypeInference = 'linear'
     # modelTypeInference = 'poly2'

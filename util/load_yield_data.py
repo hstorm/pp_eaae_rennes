@@ -3,7 +3,6 @@ import os
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
-os.chdir("/home/storm/Research/pp_eaae_rennes")
 
 # %%
 
@@ -26,7 +25,6 @@ def getData():
         scale_train[f'{c}_yield_std'] = df_train[f'{c}_yield'].std()
         df_train[f'{c}_yield_scaled'] = (df_train[f'{c}_yield']-scale_train[f'{c}_yield_mean'])/scale_train[f'{c}_yield_std']
         df_test[f'{c}_yield_scaled'] = (df_test[f'{c}_yield']-scale_train[f'{c}_yield_mean'])/scale_train[f'{c}_yield_std']
-    # %
 
     lstSmi25 = list(df.columns[df.columns.str.contains("_25")])
     lstSmi180 = list(df.columns[df.columns.str.contains("_gesamt")])
@@ -35,7 +33,7 @@ def getData():
     lstLong = {'train':[],'test':[]}
     for sDat,dfr in [('train',df_train),('test',df_test)]:
         for c in lstCrops:
-            dfi = dfr.loc[:,['NUTS3','year','smi',
+            dfi = dfr.loc[:,['region','year','smi',
                             f'{c}_yield',f'{c}_yield_scaled',
                             f'{c}_bodenzahl',f'{c}_weight']+lstSmi25+lstSmi180]
             dfi.rename(columns={f'{c}_yield':'yield',
@@ -59,9 +57,9 @@ def getData():
     dfL_train['crop_cat'] = pd.Categorical(dfL_train['crop'], categories=lstCatCrop, ordered=False).codes
     dfL_test['crop_cat'] = pd.Categorical(dfL_test['crop'], categories=lstCatCrop, ordered=False).codes
     
-    lstCatNUTS3 = list(dfL_train['NUTS3'].astype('category').cat.categories)
-    dfL_train['NUTS3_cat'] = pd.Categorical(dfL_train['NUTS3'], categories=lstCatNUTS3, ordered=False).codes
-    dfL_test['NUTS3_cat'] = pd.Categorical(dfL_test['NUTS3'], categories=lstCatNUTS3, ordered=False).codes
+    lstCatRegion = list(dfL_train['region'].astype('category').cat.categories)
+    dfL_train['Region_cat'] = pd.Categorical(dfL_train['region'], categories=lstCatRegion, ordered=False).codes
+    dfL_test['Region_cat'] = pd.Categorical(dfL_test['region'], categories=lstCatRegion, ordered=False).codes
 
     # Drop observations where bodenzahl is zero
     dfL_train = dfL_train.loc[dfL_train['bodenzahl']!=0.,:]
@@ -74,8 +72,6 @@ def getData():
     dfL_train['bodenzahl_scaled'] = (dfL_train['bodenzahl']-scale_train['bodenzahl_mean'])/scale_train['bodenzahl_std']
     dfL_test['bodenzahl_scaled'] = (dfL_test['bodenzahl']-scale_train['bodenzahl_mean'])/scale_train['bodenzahl_std']
     
-    # yield_crop = dfL['yield_scaled'].values
-
     # Drop yield na values
     dfL_train.dropna(subset=['yield'],inplace=True)
     dfL_test.dropna(subset=['yield'],inplace=True)
@@ -88,13 +84,10 @@ def getData():
     print('Train Set: value counts of crop',dfL_train.value_counts('crop'))
     print('Test Set: value counts of crop',dfL_test.value_counts('crop'))
 
-    #%
-    return dfL_train, dfL_test, lstCatCrop, lstCatNUTS3, lstSmi25, lstSmi180, scale_train
+    return dfL_train, dfL_test, lstCatCrop, lstCatRegion, lstSmi25, lstSmi180, scale_train
 
 # %%
-
 if __name__ == "__main__":
     # %%
-    dfL_train, dfL_test, lstCatCrop, lstCatNUTS3, lstSmi25, lstSmi180, scale_train = getData()
+    dfL_train, dfL_test, lstCatCrop, lstCatRegion, lstSmi25, lstSmi180, scale_train = getData()
     
-# %%

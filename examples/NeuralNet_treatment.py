@@ -56,34 +56,78 @@ def modelPotOutcome(X, T=None, Y=None):
     Y0 = X @ alpha_out 
     tau = X @ beta_treat 
     Y1 = Y0 + tau 
-    logits_T = Y1 - Y0 
-    T = numpyro.sample("T", dist.Bernoulli(logits=logits_T), obs=T)
+    T = numpyro.sample("T", dist.Bernoulli(logits=Y1 - Y0), obs=T)
     numpyro.sample("Y", dist.Normal(Y1*T + Y0*(1-T), sigma_Y), obs=Y)
     
     numpyro.deterministic("Y0", Y0)
     numpyro.deterministic("Y1", Y1)
         
-
-
 # %%
-def modelLinearEffects():
+def modelPotOutcome_poly(X, polyDegree=1, T=None, Y=None):
+    
+    alpha_out = numpyro.sample("alpha_out", dist.Normal(0.,1).expand([X.shape[1]]))
+    sigma_Y = numpyro.sample("sigma_Y", dist.Exponential(1))
+    
+    beta_treat = numpyro.sample("beta_treat", dist.Normal(0.,1).expand([X.shape[1]]))
+    tau = X @ beta_treat 
+    if polyDegree>1:
+        betaSq_treat = numpyro.sample("betaSq_treat", dist.Normal(0.,1).expand([X.shape[1]]))
+        tau = tau + X**2 @ betaSq_treat 
+
+        if polyDegree>2:
+            betaCub_treat = numpyro.sample("betaCub_treat", dist.Normal(0.,1).expand([X.shape[1]]))
+            tau = tau + X**3 @ betaCub_treat 
+
+    Y0 = X @ alpha_out 
+    Y1 = Y0 + tau 
+    T = numpyro.sample("T", dist.Bernoulli(logits=Y1 - Y0), obs=T)
+    numpyro.sample("Y", dist.Normal(Y1*T + Y0*(1-T), sigma_Y), obs=Y)
+    
+    numpyro.deterministic("Y0", Y0)
+    numpyro.deterministic("Y1", Y1)
+# %%        
+def data_generating(): 
+    
+    
     # %%
     N = 10000
     K = 5
     X = np.random.normal(0, 1.0, size=(N,K))
 
+    # %%
+    modelTypeDataGen = 'linear'
+    modelTypeDataGen = 'poly2'
+    modelTypeDataGen = 'poly3'
+    modelTypeDataGen = 'NN'
+    if modelTypeDataGen == 'linear':
+        model = modelPotOutcome
+        datX = {'X':X}
+        
+    elif modelTypeDataGen = 'poly2':
+        model = modelPotOutcome_poly
+        datX = {'X':X, 'polyDegree':2}
+    elif modelTypeDataGen = 'poly3':
+        model = modelPotOutcome_poly
+        datX = {'X':X, 'polyDegree':3}
+    elif modelTypeDataGen = 'NN':
+        model = modelPotOutcome_poly
+        datX = {'X':X, 'polyDegree':3}
+    # %%
     # Run the DGP  once to get values for latent variables
     rng_key, rng_key_ = random.split(rng_key)
-    lat_predictive = Predictive(modelPP_treament, num_samples=1)
-    lat_samples = lat_predictive(rng_key_,X=X)
+    lat_predictive = Predictive(model, num_samples=1)
+    lat_samples = lat_predictive(rng_key_,**datX)
     lat_samples['Y0'].shape
 
+    coefTrue = {s:lat_samples[s][0] for s in 
+                lat_samples.keys() if s not in ['Y','T','Y0', 'Y1','b_treat']}
+    coefTrue.keys()
+    
     # %%
-    # # Condition the model and get predictions for Y
-    condition_model = numpyro.handlers.condition(modelPP_treament, data=coefTrue)
-    nPriorSamples = 1
-    prior_predictive = Predictive(condition_model, num_samples=nPriorSamples)
-    prior_samples = prior_predictive(rng_key_,X=X)
+    # Condition the model and get predictions for Y
+    condition_model = numpyro.handlers.condition(model, data=coefTrue)
+    conditioned_predictive = Predictive(condition_model, num_samples=1)
+    prior_samples = conditioned_predictive(rng_key_,**datX)
     Y = prior_samples['Y'].squeeze()
     T = prior_samples['T'].squeeze()
     mu_Y0 = prior_samples['Y0'].squeeze()
@@ -93,14 +137,69 @@ def modelLinearEffects():
     print('avg treatment effect',np.mean(mu_Y1-mu_Y0))
     plt.hist(mu_Y1-mu_Y0,bins=100);
     
+
+    
+
+# %%
+def modelLinearEffects():
+    # %%
+    N = 10000
+    K = 5
+    X = np.random.normal(0, 1.0, size=(N,K))
+
+    # %%
+    nPriorSamples = 1000
+    # Prior sampling
+    rng_key, rng_key_ = random.split(rng_key)
+    conditioned_predictive = Predictive(modelPotOutcome, num_samples=nPriorSamples)
+    prior_samples = conditioned_predictive(rng_key_,X=X)
+    # %%
+    fig, ax = plt.subplots()
+    ax.hist(prior_samples['T'].mean(axis=0),bins=100)
+    ax.set_title('hist of prior treatement share')
+    
+    fig, ax = plt.subplots()
+    prior_tau = prior_samples['Y1']-prior_samples['Y0']
+    ax.hist(prior_tau.mean(axis=0),bins=100)
+    ax.set_title('hist of prior avg treatment effects (tau)')
+    # %%
+    fig, ax = plt.subplots()
+    ax.hist(prior_samples['beta_treat'][:,0],bins=100)
+    # %%
+    # Run the DGP  once to get values for latent variables
+    rng_key, rng_key_ = random.split(rng_key)
+    lat_predictive = Predictive(modelPotOutcome, num_samples=1)
+    lat_samples = lat_predictive(rng_key_,X=X)
+    lat_samples['Y0'].shape
+
+    coefTrue = {s:lat_samples[s][0] for s in 
+                lat_samples.keys() if s not in ['Y','T','Y0', 'Y1','b_treat']}
+    coefTrue.keys()
+    # %%
+    # # Condition the model and get predictions for Y
+    condition_model = numpyro.handlers.condition(modelPotOutcome, data=coefTrue)
+    conditioned_predictive = Predictive(condition_model, num_samples=1)
+    prior_samples = conditioned_predictive(rng_key_,X=X)
+    Y = prior_samples['Y'].squeeze()
+    T = prior_samples['T'].squeeze()
+    mu_Y0 = prior_samples['Y0'].squeeze()
+    mu_Y1 = prior_samples['Y1'].squeeze()
+    beta_true = prior_samples['beta_treat'].squeeze()
+    alpha_true = prior_samples['alpha_out'].squeeze()
+    print('avg treatment effect',np.mean(mu_Y1-mu_Y0))
+    plt.hist(mu_Y1-mu_Y0,bins=100);
+    
+
+ 
+    
     # %%
     # Estimate with SVI
     rng_key, rng_key_ = random.split(rng_key)
-    guide = autoguide.AutoNormal(modelPP_treament, 
+    guide = autoguide.AutoNormal(modelPotOutcome, 
                         init_loc_fn=init_to_feasible)
 
-    # svi = SVI(modelPP_treament,guide,optim.Adam(0.01),Trace_ELBO())
-    svi = SVI(modelPP_treament,guide,optim.Adam(0.01),TraceMeanField_ELBO())
+    # svi = SVI(modelPotOutcome,guide,optim.Adam(0.01),Trace_ELBO())
+    svi = SVI(modelPotOutcome,guide,optim.Adam(0.01),TraceMeanField_ELBO())
     svi_result = svi.run(rng_key_, 10000,X=X,T=T,Y=Y)
     plt.plot(svi_result.losses)
     svi_params = svi_result.params
@@ -111,13 +210,12 @@ def modelLinearEffects():
     samples_svi.keys()
     # %%
     # Get posterior predictions using samples from the posterior
-    hyperparams['batch_size'] = hyperparams['N']
-    predictivePosterior = Predictive(modelPP_treament, posterior_samples=samples_svi)
+    predictivePosterior = Predictive(modelPotOutcome, posterior_samples=samples_svi)
     post_predict = predictivePosterior(random.PRNGKey(1), X=X)
     post_predict.keys()
     
     print('true avg treatment effect',np.mean(mu_Y1-mu_Y0))
-    print('estimated avg treatment effect',np.mean(post_predict['mu_Y1']-post_predict['mu_Y0']))
+    print('estimated avg treatment effect',np.mean(post_predict['Y1']-post_predict['Y0']))
     
     print('alpha_true',alpha_true)
     print('alpha_hat',np.mean(samples_svi['alpha_out'],axis=0))
@@ -125,6 +223,31 @@ def modelLinearEffects():
     print('beta_true',beta_true)
     print('beta_hat',np.mean(samples_svi['beta_treat'],axis=0))
 
+    # %%
+    k = 0
+    x_range = np.linspace(-5,5,100)
+    x_mean = X.mean(axis=0)
+    x_plot = np.repeat(x_mean.reshape(1,-1),100,axis=0)
+    x_plot[:,k] = x_range
+    # Get posterior predictions
+    post_predict = predictivePosterior(random.PRNGKey(1), X=x_plot)
+    # Get prediction from the "true" conditioned model
+    true_predict = conditioned_predictive(rng_key_,X=x_plot)
+    
+    fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+    for i in range(1,300):
+        ax.plot(x_plot[:,k],(post_predict['Y1']-post_predict['Y0'])[i,:],color='k',alpha=0.2);
+    # Add "true" effect in red    
+    ax.plot(x_plot[:,k],(true_predict['Y1']-true_predict['Y0'])[0,:],color='r',alpha=1);
+
+    ax.set_xlabel(f'X[{k}]', fontsize=20)
+    ax.set_ylabel('tau', fontsize=20)
+    # Set tick font size
+    for label in (ax.get_xticklabels() + ax.get_yticklabels()):
+        label.set_fontsize(20)
+        
+    
+    
 # %%
 # Useful source: https://omarfsosa.github.io/bayesian_nn
 
@@ -182,33 +305,35 @@ class MLP(nn.Module):
 # %%
 def modelPP_NN_treament(hyperparams, X, T=None, Y=None, is_training=False):
     
-    lst_layer_potOut = hyperparams['lst_layer_potOut']
-    lst_dropout_potOut = hyperparams['lst_dropout_potOut']
-    lst_use_bias_potOut = hyperparams['lst_use_bias_potOut']
+    lst_lay_Y0 = hyperparams['lst_lay_Y0']
+    lst_drop_Y0 = hyperparams['lst_drop_Y0']
+    lst_bias_Y0 = hyperparams['lst_bias_Y0']
     
-    lst_layer_treatEffect = hyperparams['lst_layer_treatEffect']
-    lst_dropout_treatEffect = hyperparams['lst_dropout_treatEffect']
-    lst_use_bias_treatEffect = hyperparams['lst_use_bias_treatEffect']
+    lst_lay_tau = hyperparams['lst_lay_tau']
+    lst_drop_tau = hyperparams['lst_drop_tau']
+    lst_bias_tau = hyperparams['lst_bias_tau']
     
-    assert len(lst_layer_potOut) == len(lst_dropout_potOut) + 1
-    assert len(lst_layer_potOut) == len(lst_use_bias_potOut) + 1
-    assert len(lst_layer_treatEffect) == len(lst_dropout_treatEffect) + 1
-    assert len(lst_layer_treatEffect) == len(lst_use_bias_treatEffect) + 1
+    assert len(lst_lay_Y0) == len(lst_drop_Y0) + 1
+    assert len(lst_lay_Y0) == len(lst_bias_Y0) + 1
+    assert len(lst_lay_tau) == len(lst_drop_tau) + 1
+    assert len(lst_lay_tau) == len(lst_bias_tau) + 1
 
     # Specify a NN for the potential outcomes without the treatment effect
-    nn_potOut = random_flax_module("nn_potOut",
-                MLP(lst_layer_potOut, lst_dropout_potOut,lst_use_bias_potOut),
+    prior_MLP_Y0 = {**{f"Dense_{i}.bias":dist.Cauchy() for i in range(0,len(lst_lay_Y0))},
+                    **{f"Dense_{i}.kernel":dist.Normal(0.,1) for i in range(0,len(lst_lay_Y0))}}
+    MLP_Y0 = random_flax_module("MLP_Y0",
+                MLP(lst_lay_Y0, lst_drop_Y0,lst_bias_Y0),
                 input_shape=(1, X.shape[1]), 
-                prior={**{f"Dense_{i}.bias":dist.Cauchy()   for i in range(0,len(lst_layer_potOut))},
-                    **{f"Dense_{i}.kernel":dist.Normal(0.,1)  for i in range(0,len(lst_layer_potOut))}},
+                prior=prior_MLP_Y0,
                 apply_rng=["dropout"],is_training=True)
-    
+
     # Specify the treatment effect parameter as a NN
-    nn_treatEffect = random_flax_module("nn_treatEffect",
-                MLP(lst_layer_treatEffect, lst_dropout_treatEffect,lst_use_bias_treatEffect),
+    prior_MPL_tau = {**{f"Dense_{i}.bias":dist.Cauchy() for i in range(0,len(lst_lay_tau))},
+                    **{f"Dense_{i}.kernel":dist.Normal(0.,1) for i in range(0,len(lst_lay_tau))}}
+    MLP_tau = random_flax_module("MLP_tau",
+                MLP(lst_lay_tau, lst_drop_tau,lst_bias_tau),
                 input_shape=(1, X.shape[1]), 
-                prior={**{f"Dense_{i}.bias":dist.Cauchy()   for i in range(0,len(lst_layer_treatEffect))},
-                    **{f"Dense_{i}.kernel":dist.Normal(0.,1)  for i in range(0,len(lst_layer_treatEffect))}},
+                prior=prior_MPL_tau,
                 apply_rng=["dropout"],is_training=True)
 
     sigma_Y = numpyro.sample("sigma_Y", dist.Exponential(1))
@@ -218,23 +343,20 @@ def modelPP_NN_treament(hyperparams, X, T=None, Y=None, is_training=False):
         batch_X = numpyro.subsample(X, event_dim=1)
         batch_Y = numpyro.subsample(Y, event_dim=0) if Y is not None else None
         batch_T = numpyro.subsample(T, event_dim=0) if T is not None else None
-        # Calculate expect potOut for T=0
+
         rng_key, _rng_key = jax.random.split(key=rng_key)
-        mu_P0 = nn_potOut(batch_X, is_training, rngs={"dropout": rng_key})
-        # Calculate individual specific treatment effect
+        Y0 = MLP_Y0(batch_X, is_training, rngs={"dropout": _rng_key})
+
         rng_key, _rng_key = jax.random.split(key=rng_key)
-        b_treat = nn_treatEffect(batch_X, is_training, rngs={"dropout": rng_key})
-        # Calculate expect potOut for T=1 as mu_P0 plus individual specific treatment effect
-        mu_P1 = mu_P0 + b_treat
-        # Logits for T are the difference between the two expected potential outcomes
-        logits_T = mu_P1 - mu_P0
-        T = numpyro.sample("T", dist.Bernoulli(logits=logits_T), obs=batch_T)
-        # Observed outcome depends on mu_P1 and mu_P0 depending on T
-        numpyro.sample("Y", dist.Normal(mu_P1*T + mu_P0*(1-T), sigma_Y), obs=batch_Y)
+        tau = MLP_tau(batch_X, is_training, rngs={"dropout": _rng_key})
+
+        Y1 = Y0 + tau
+        T = numpyro.sample("T", dist.Bernoulli(logits=Y1 - Y0), obs=batch_T)
+        numpyro.sample("Y", dist.Normal(Y1*T + Y0*(1-T), sigma_Y), obs=batch_Y)
         
-        numpyro.deterministic("b_treat", b_treat)
-        numpyro.deterministic("mu_P0", mu_P0)
-        numpyro.deterministic("mu_P1", mu_P1)
+        numpyro.deterministic("tau", tau)
+        numpyro.deterministic("Y0", Y0)
+        numpyro.deterministic("Y1", Y1)
         
 
     
@@ -249,12 +371,12 @@ if __name__ == '__main__':
     hyperparams['rng_key'] = rng_key
     hyperparams['batch_size'] = hyperparams['N']
     # Specify a degenerated NN with one layer and no dropout, similar to a logistic regression
-    hyperparams['lst_layer_potOut'] = [512,64,1]
-    hyperparams['lst_dropout_potOut'] = [0.0,0.0]
-    hyperparams['lst_use_bias_potOut'] = [False,False]
-    hyperparams['lst_layer_treatEffect'] = [1]
-    hyperparams['lst_dropout_treatEffect'] = []
-    hyperparams['lst_use_bias_treatEffect'] = []
+    hyperparams['lst_lay_Y0'] = [512,64,1]
+    hyperparams['lst_drop_Y0'] = [0.0,0.0]
+    hyperparams['lst_bias_Y0'] = [False,False]
+    hyperparams['lst_lay_tau'] = [1]
+    hyperparams['lst_drop_tau'] = []
+    hyperparams['lst_bias_tau'] = []
 
     X = np.random.normal(0, 1.0, size=(hyperparams['N'],hyperparams['K']))
 
@@ -264,31 +386,33 @@ if __name__ == '__main__':
     lat_samples = lat_predictive(rng_key_,X=X,hyperparams=hyperparams)
 
     coefTrue = {s:lat_samples[s][0] for s in 
-                lat_samples.keys() if s not in ['Y','T','mu_P0', 'mu_P1','b_treat']}
+                lat_samples.keys() if s not in ['Y','T','Y0', 'Y1','b_treat']}
     coefTrue.keys()
     # %%
     # # Condition the model and get predictions for Y
     condition_model = numpyro.handlers.condition(modelPP_NN_treament, data=coefTrue)
     nPriorSamples = 1
-    prior_predictive = Predictive(condition_model, num_samples=nPriorSamples, 
-                                  return_sites=["Y",'T','mu_P0', 'mu_P1','b_treat'])
-    prior_samples = prior_predictive(rng_key_,X=X,hyperparams=hyperparams)
+    conditioned_predictive = Predictive(condition_model, num_samples=nPriorSamples, 
+                                  return_sites=["Y",'T','Y0', 'Y1','tau'])
+    prior_samples = conditioned_predictive(rng_key_,X=X,hyperparams=hyperparams)
     Y = prior_samples['Y'].squeeze()
     T = prior_samples['T'].squeeze()
-    mu_P0 = prior_samples['mu_P0'].squeeze()
-    mu_P1 = prior_samples['mu_P1'].squeeze()
-    b_treat = prior_samples['b_treat'].squeeze()
+    Y0 = prior_samples['Y0'].squeeze()
+    Y1 = prior_samples['Y1'].squeeze()
+    # b_treat = prior_samples['b_treat'].squeeze()
     print('Min,Max,Mean Y',np.min(Y),np.max(Y),np.mean(Y))
     print('Min,Max,Mean T',np.min(T),np.max(T),np.mean(T))
-    plt.hist(Y[:10000],bins=100);
-    print('Min,Max,Mean mu_P0',np.min(mu_P0),np.max(mu_P0),np.mean(mu_P0))
-    print('Min,Max,Mean mu_P1',np.min(mu_P1),np.max(mu_P1),np.mean(mu_P1))
+    print('Min,Max,Mean mu_P0',np.min(Y0),np.max(Y0),np.mean(Y0))
+    print('Min,Max,Mean mu_P1',np.min(Y1),np.max(Y1),np.mean(Y1))
     plt.show()
-    print('avg treatment effect',np.mean(mu_P1-mu_P0))
-    plt.hist(mu_P1-mu_P0,bins=100);
+    print('avg treatment effect',np.mean(Y1-Y0))
+    plt.hist(Y1-Y0,bins=100);
     
+    fig, ax = plt.subplots()
+    ax.hist(Y[T==0][:10000],bins=100,density=True,color='green',alpha=0.5,label='T=0');
+    ax.hist(Y[T==1][:10000],bins=100,density=True,color='red',alpha=0.5,label='T=1');
     # %%
-    mu_diff = mu_P1-mu_P0
+    mu_diff = Y1-Y0
     aa = pd.DataFrame(np.hstack([X,mu_diff[:,None]]),
                       columns=[f'X{i}' for i in range(0,X.shape[1])]+['mu_diff'])
     x_vars = [f'X{i}' for i in range(0,X.shape[1])]
@@ -308,7 +432,7 @@ if __name__ == '__main__':
     print('R2 OLS',r2_ols)
     b_treatment_hat = b_hat_ols[1]
     print('b_treatment_hat',b_treatment_hat)
-    print('avg treatment effect',np.mean(mu_P1-mu_P0))
+    print('avg treatment effect',np.mean(Y1-Y0))
     # %%
     # numpyro.render_model(modelPP_NN_treament, model_args=(hyperparams,X),
     #                      render_distributions=True)
@@ -321,9 +445,9 @@ if __name__ == '__main__':
     hyperparams['lst_layer_potOut'] = [256,32,1]
     hyperparams['lst_dropout_potOut'] = [0.2,0.1]
     hyperparams['lst_use_bias_potOut'] = [True,True]
-    hyperparams['lst_layer_treatEffect'] = [32,1]
-    hyperparams['lst_dropout_treatEffect'] = [0.1]
-    hyperparams['lst_use_bias_treatEffect'] = [True]
+    hyperparams['lst_layer_treatEffect'] = [64,32,1]
+    hyperparams['lst_dropout_treatEffect'] = [0.2,0.1]
+    hyperparams['lst_use_bias_treatEffect'] = [True,True]
     hyperparams['batch_size'] = 512
 
     # svi = SVI(modelPP_NN_treament,guide,optim.Adam(0.01),Trace_ELBO())
@@ -340,10 +464,37 @@ if __name__ == '__main__':
     # Get posterior predictions using samples from the posterior
     hyperparams['batch_size'] = hyperparams['N']
     predictivePosterior = Predictive(modelPP_NN_treament, posterior_samples=samples_svi, 
-                                     return_sites=['Y','mu_P0', 'mu_P1','b_treat'])
+                                     return_sites=['Y','Y0', 'Y1','tau'])
     post_predict = predictivePosterior(random.PRNGKey(1), X=X, hyperparams=hyperparams,is_training=False)
     post_predict.keys()
 
+    # %%
+    k = 0
+    x_range = np.linspace(-5,5,100)
+    x_mean = X.mean(axis=0)
+    x_plot = np.repeat(x_mean.reshape(1,-1),100,axis=0)
+    x_plot[:,k] = x_range
+    
+    hyperparams['batch_size'] = 100
+    # Get posterior predictions
+    post_predict = predictivePosterior(random.PRNGKey(1), X=x_plot,hyperparams=hyperparams,is_training=False)
+    
+    # Get prediction from the "true" conditioned model
+    true_predict = conditioned_predictive(rng_key_,X=x_plot)
+    
+    fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+    for i in range(1,300):
+        ax.plot(x_plot[:,k],(post_predict['Y1']-post_predict['Y0'])[i,:],color='k',alpha=0.2);
+    # Add "true" effect in red    
+    ax.plot(x_plot[:,k],(true_predict['Y1']-true_predict['Y0'])[0,:],color='r',alpha=1);
+
+    ax.set_xlabel(f'X[{k}]', fontsize=20)
+    ax.set_ylabel('tau', fontsize=20)
+    # Set tick font size
+    for label in (ax.get_xticklabels() + ax.get_yticklabels()):
+        label.set_fontsize(20)
+    
+    
     # %%
     fig, ax = plt.subplots(figsize=(6, 6))
     # ax.scatter(logits_true,post_predict['logits'].mean(axis=0),s=0.1)

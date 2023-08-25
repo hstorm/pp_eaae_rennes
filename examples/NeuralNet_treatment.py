@@ -38,8 +38,8 @@ from numpyro.infer import SVI, TraceMeanField_ELBO
 # if "SVG" in os.environ:
 #     %config InlineBackend.figure_formats = ["svg"]
 az.style.use("arviz-darkgrid")
-# numpyro.set_platform("cpu")
-numpyro.set_platform("gpu")
+numpyro.set_platform("cpu")
+# numpyro.set_platform("gpu")
 # numpyro.set_host_device_count(2)
 
 # %%
@@ -63,7 +63,7 @@ def modelPotOutcome(X, T=None, Y=None):
     numpyro.deterministic("Y1", Y1)
         
 # %%
-def modelPotOutcome_poly(X, polyDegree=1, T=None, Y=None):
+def modelPotOutcome_poly(X, polyDegree=1, stepFunction=False, T=None, Y=None):
     
     alpha_out = numpyro.sample("alpha_out", dist.Normal(0.,1).expand([X.shape[1]]))
     sigma_Y = numpyro.sample("sigma_Y", dist.Exponential(1))
@@ -78,6 +78,15 @@ def modelPotOutcome_poly(X, polyDegree=1, T=None, Y=None):
             betaCub_treat = numpyro.sample("betaCub_treat", dist.Normal(0.,1).expand([X.shape[1]]))
             tau = tau + X**3 @ betaCub_treat 
 
+    if stepFunction:
+        betaStep_treat = numpyro.sample("betaStep_treat", dist.Normal(0.,10)) 
+        # betaStep_treat = numpyro.sample("betaStep_treat", dist.Normal(0.,1).expand([1,X.shape[1]])) 
+        # print('betaStep_treat.shape',betaStep_treat.shape)
+        # print('tau.shape',tau.shape)
+        # print('X.shape',X.shape)
+        # print('(betaStep_treat * (X>0.0)).shape',(betaStep_treat * (X>0.0)).shape)
+        tau = tau + betaStep_treat * (X[:,0]>0.0)
+
     Y0 = X @ alpha_out 
     Y1 = Y0 + tau 
     T = numpyro.sample("T", dist.Bernoulli(logits=Y1 - Y0), obs=T)
@@ -85,174 +94,10 @@ def modelPotOutcome_poly(X, polyDegree=1, T=None, Y=None):
     
     numpyro.deterministic("Y0", Y0)
     numpyro.deterministic("Y1", Y1)
-# %%        
-def data_generating(): 
-    
-    
-    # %%
-    N = 10000
-    K = 5
-    X = np.random.normal(0, 1.0, size=(N,K))
-
-    # %%
-    modelTypeDataGen = 'linear'
-    modelTypeDataGen = 'poly2'
-    modelTypeDataGen = 'poly3'
-    modelTypeDataGen = 'NN'
-    if modelTypeDataGen == 'linear':
-        model = modelPotOutcome
-        datX = {'X':X}
-        
-    elif modelTypeDataGen = 'poly2':
-        model = modelPotOutcome_poly
-        datX = {'X':X, 'polyDegree':2}
-    elif modelTypeDataGen = 'poly3':
-        model = modelPotOutcome_poly
-        datX = {'X':X, 'polyDegree':3}
-    elif modelTypeDataGen = 'NN':
-        model = modelPotOutcome_poly
-        datX = {'X':X, 'polyDegree':3}
-    # %%
-    # Run the DGP  once to get values for latent variables
-    rng_key, rng_key_ = random.split(rng_key)
-    lat_predictive = Predictive(model, num_samples=1)
-    lat_samples = lat_predictive(rng_key_,**datX)
-    lat_samples['Y0'].shape
-
-    coefTrue = {s:lat_samples[s][0] for s in 
-                lat_samples.keys() if s not in ['Y','T','Y0', 'Y1','b_treat']}
-    coefTrue.keys()
-    
-    # %%
-    # Condition the model and get predictions for Y
-    condition_model = numpyro.handlers.condition(model, data=coefTrue)
-    conditioned_predictive = Predictive(condition_model, num_samples=1)
-    prior_samples = conditioned_predictive(rng_key_,**datX)
-    Y = prior_samples['Y'].squeeze()
-    T = prior_samples['T'].squeeze()
-    mu_Y0 = prior_samples['Y0'].squeeze()
-    mu_Y1 = prior_samples['Y1'].squeeze()
-    beta_true = prior_samples['beta_treat'].squeeze()
-    alpha_true = prior_samples['alpha_out'].squeeze()
-    print('avg treatment effect',np.mean(mu_Y1-mu_Y0))
-    plt.hist(mu_Y1-mu_Y0,bins=100);
-    
-
-    
-
-# %%
-def modelLinearEffects():
-    # %%
-    N = 10000
-    K = 5
-    X = np.random.normal(0, 1.0, size=(N,K))
-
-    # %%
-    nPriorSamples = 1000
-    # Prior sampling
-    rng_key, rng_key_ = random.split(rng_key)
-    conditioned_predictive = Predictive(modelPotOutcome, num_samples=nPriorSamples)
-    prior_samples = conditioned_predictive(rng_key_,X=X)
-    # %%
-    fig, ax = plt.subplots()
-    ax.hist(prior_samples['T'].mean(axis=0),bins=100)
-    ax.set_title('hist of prior treatement share')
-    
-    fig, ax = plt.subplots()
-    prior_tau = prior_samples['Y1']-prior_samples['Y0']
-    ax.hist(prior_tau.mean(axis=0),bins=100)
-    ax.set_title('hist of prior avg treatment effects (tau)')
-    # %%
-    fig, ax = plt.subplots()
-    ax.hist(prior_samples['beta_treat'][:,0],bins=100)
-    # %%
-    # Run the DGP  once to get values for latent variables
-    rng_key, rng_key_ = random.split(rng_key)
-    lat_predictive = Predictive(modelPotOutcome, num_samples=1)
-    lat_samples = lat_predictive(rng_key_,X=X)
-    lat_samples['Y0'].shape
-
-    coefTrue = {s:lat_samples[s][0] for s in 
-                lat_samples.keys() if s not in ['Y','T','Y0', 'Y1','b_treat']}
-    coefTrue.keys()
-    # %%
-    # # Condition the model and get predictions for Y
-    condition_model = numpyro.handlers.condition(modelPotOutcome, data=coefTrue)
-    conditioned_predictive = Predictive(condition_model, num_samples=1)
-    prior_samples = conditioned_predictive(rng_key_,X=X)
-    Y = prior_samples['Y'].squeeze()
-    T = prior_samples['T'].squeeze()
-    mu_Y0 = prior_samples['Y0'].squeeze()
-    mu_Y1 = prior_samples['Y1'].squeeze()
-    beta_true = prior_samples['beta_treat'].squeeze()
-    alpha_true = prior_samples['alpha_out'].squeeze()
-    print('avg treatment effect',np.mean(mu_Y1-mu_Y0))
-    plt.hist(mu_Y1-mu_Y0,bins=100);
-    
-
- 
-    
-    # %%
-    # Estimate with SVI
-    rng_key, rng_key_ = random.split(rng_key)
-    guide = autoguide.AutoNormal(modelPotOutcome, 
-                        init_loc_fn=init_to_feasible)
-
-    # svi = SVI(modelPotOutcome,guide,optim.Adam(0.01),Trace_ELBO())
-    svi = SVI(modelPotOutcome,guide,optim.Adam(0.01),TraceMeanField_ELBO())
-    svi_result = svi.run(rng_key_, 10000,X=X,T=T,Y=Y)
-    plt.plot(svi_result.losses)
-    svi_params = svi_result.params
-    # %%
-    # Get samples from the posterior
-    predictive = Predictive(guide, params=svi_params, num_samples=500)
-    samples_svi = predictive(random.PRNGKey(1), X=X)
-    samples_svi.keys()
-    # %%
-    # Get posterior predictions using samples from the posterior
-    predictivePosterior = Predictive(modelPotOutcome, posterior_samples=samples_svi)
-    post_predict = predictivePosterior(random.PRNGKey(1), X=X)
-    post_predict.keys()
-    
-    print('true avg treatment effect',np.mean(mu_Y1-mu_Y0))
-    print('estimated avg treatment effect',np.mean(post_predict['Y1']-post_predict['Y0']))
-    
-    print('alpha_true',alpha_true)
-    print('alpha_hat',np.mean(samples_svi['alpha_out'],axis=0))
-    
-    print('beta_true',beta_true)
-    print('beta_hat',np.mean(samples_svi['beta_treat'],axis=0))
-
-    # %%
-    k = 0
-    x_range = np.linspace(-5,5,100)
-    x_mean = X.mean(axis=0)
-    x_plot = np.repeat(x_mean.reshape(1,-1),100,axis=0)
-    x_plot[:,k] = x_range
-    # Get posterior predictions
-    post_predict = predictivePosterior(random.PRNGKey(1), X=x_plot)
-    # Get prediction from the "true" conditioned model
-    true_predict = conditioned_predictive(rng_key_,X=x_plot)
-    
-    fig, ax = plt.subplots(1, 1, figsize=(8, 4))
-    for i in range(1,300):
-        ax.plot(x_plot[:,k],(post_predict['Y1']-post_predict['Y0'])[i,:],color='k',alpha=0.2);
-    # Add "true" effect in red    
-    ax.plot(x_plot[:,k],(true_predict['Y1']-true_predict['Y0'])[0,:],color='r',alpha=1);
-
-    ax.set_xlabel(f'X[{k}]', fontsize=20)
-    ax.set_ylabel('tau', fontsize=20)
-    # Set tick font size
-    for label in (ax.get_xticklabels() + ax.get_yticklabels()):
-        label.set_fontsize(20)
-        
-    
-    
-# %%
-# Useful source: https://omarfsosa.github.io/bayesian_nn
 
 # %%
 # Define a Flax NN model class which can be used within the DGP
+# Useful source: https://omarfsosa.github.io/bayesian_nn
 from typing import Sequence
 class MLP(nn.Module):
     """
@@ -359,132 +204,284 @@ def modelPP_NN_treament(hyperparams, X, T=None, Y=None, is_training=False):
         numpyro.deterministic("Y1", Y1)
         
 
-    
-# %%
-if __name__ == '__main__':
-  """Check if training work for a "deep" net with 2 hidden layers 
-    """
-    # %%
-    hyperparams = {}
-    hyperparams['N'] = 10000
-    hyperparams['K'] = 5
-    hyperparams['rng_key'] = rng_key
-    hyperparams['batch_size'] = hyperparams['N']
-    # Specify a degenerated NN with one layer and no dropout, similar to a logistic regression
-    hyperparams['lst_lay_Y0'] = [512,64,1]
-    hyperparams['lst_drop_Y0'] = [0.0,0.0]
-    hyperparams['lst_bias_Y0'] = [False,False]
-    hyperparams['lst_lay_tau'] = [1]
-    hyperparams['lst_drop_tau'] = []
-    hyperparams['lst_bias_tau'] = []
 
-    X = np.random.normal(0, 1.0, size=(hyperparams['N'],hyperparams['K']))
+# %%        
+def data_generating(rng_key=rng_key,
+                    modelTypeDataGen = 'linear',
+                    N = 10000,
+                    K = 5,
+                    X=None): 
+    # %
+    # Generate X if not provided    
+    if X is None:
+        X = np.random.normal(0, 1.0, size=(N,K))
 
+    if modelTypeDataGen == 'linear':
+        model = modelPotOutcome
+        datX_conditioned = {'X':X}
+    elif modelTypeDataGen == 'poly2':
+        model = modelPotOutcome_poly
+        datX_conditioned = {'X':X, 'polyDegree':2}
+    elif modelTypeDataGen == 'poly3':
+        model = modelPotOutcome_poly
+        datX_conditioned = {'X':X, 'polyDegree':3}
+    elif modelTypeDataGen == 'poly3_step':
+        model = modelPotOutcome_poly
+        datX_conditioned = {'X':X,'stepFunction':True, 'polyDegree':3}
+    elif modelTypeDataGen == 'NN':
+        model = modelPP_NN_treament
+        
+        hyperparams = {}
+        hyperparams['N'] = 10000
+        hyperparams['K'] = 5
+        hyperparams['rng_key'] = rng_key
+        hyperparams['batch_size'] = hyperparams['N']
+        hyperparams['lst_lay_Y0'] = [512,64,1]
+        hyperparams['lst_drop_Y0'] = [0.0,0.0]
+        hyperparams['lst_bias_Y0'] = [True,True]
+        hyperparams['lst_lay_tau'] = [512,64,32,1]
+        hyperparams['lst_drop_tau'] = [0.0,0.0,0.0]
+        hyperparams['lst_bias_tau'] = [True,True,True]
+        
+        datX_conditioned = {'X':X, 'hyperparams':hyperparams}
+    else:
+        raise ValueError('modelTypeDataGen not recognized')
+    #%
     # Run the DGP  once to get values for latent variables
     rng_key, rng_key_ = random.split(rng_key)
-    lat_predictive = Predictive(modelPP_NN_treament, num_samples=1)
-    lat_samples = lat_predictive(rng_key_,X=X,hyperparams=hyperparams)
+    lat_predictive = Predictive(model, num_samples=1)
+    lat_samples = lat_predictive(rng_key_,**datX_conditioned)
+    lat_samples['Y0'].shape
 
     coefTrue = {s:lat_samples[s][0] for s in 
                 lat_samples.keys() if s not in ['Y','T','Y0', 'Y1','b_treat']}
     coefTrue.keys()
-    # %%
-    # # Condition the model and get predictions for Y
-    condition_model = numpyro.handlers.condition(modelPP_NN_treament, data=coefTrue)
-    nPriorSamples = 1
-    conditioned_predictive = Predictive(condition_model, num_samples=nPriorSamples, 
-                                  return_sites=["Y",'T','Y0', 'Y1','tau'])
-    prior_samples = conditioned_predictive(rng_key_,X=X,hyperparams=hyperparams)
-    Y = prior_samples['Y'].squeeze()
+    
+    #%
+    # Condition the model and get predictions for Y
+    condition_model = numpyro.handlers.condition(model, data=coefTrue)
+    conditioned_predictive = Predictive(condition_model, num_samples=1)
+    prior_samples = conditioned_predictive(rng_key_,**datX_conditioned)
+    Y_unscaled = prior_samples['Y'].squeeze()
     T = prior_samples['T'].squeeze()
     Y0 = prior_samples['Y0'].squeeze()
     Y1 = prior_samples['Y1'].squeeze()
-    # b_treat = prior_samples['b_treat'].squeeze()
-    print('Min,Max,Mean Y',np.min(Y),np.max(Y),np.mean(Y))
-    print('Min,Max,Mean T',np.min(T),np.max(T),np.mean(T))
-    print('Min,Max,Mean mu_P0',np.min(Y0),np.max(Y0),np.mean(Y0))
-    print('Min,Max,Mean mu_P1',np.min(Y1),np.max(Y1),np.mean(Y1))
-    plt.show()
     print('avg treatment effect',np.mean(Y1-Y0))
     plt.hist(Y1-Y0,bins=100);
+        
+    # Standardize Y
+    Y_mean = Y_unscaled.mean(axis=0)
+    Y_std = Y_unscaled.std(axis=0)
+    Y = (Y_unscaled - Y_mean)/Y_std
     
-    fig, ax = plt.subplots()
-    ax.hist(Y[T==0][:10000],bins=100,density=True,color='green',alpha=0.5,label='T=0');
-    ax.hist(Y[T==1][:10000],bins=100,density=True,color='red',alpha=0.5,label='T=1');
-    # %%
-    mu_diff = Y1-Y0
-    aa = pd.DataFrame(np.hstack([X,mu_diff[:,None]]),
-                      columns=[f'X{i}' for i in range(0,X.shape[1])]+['mu_diff'])
-    x_vars = [f'X{i}' for i in range(0,X.shape[1])]
-    y_vars = ["mu_diff"]
+    print('Share treated',np.mean(T))
+    print(f'Mean(Y)={np.mean(Y):.4f}; std(Y)={np.std(Y):.4f}')
     
-    g = sns.PairGrid(aa,x_vars=x_vars, y_vars=y_vars)
-    g.map(sns.scatterplot,s=0.1)
-    # %%  
-    Xc = np.hstack([np.ones([T.shape[0],1]), T[:,None],X])
-    b_hat_ols = np.linalg.inv(Xc.T@Xc)@Xc.T@Y
-    y_hat_ols = Xc @ b_hat_ols
+    # %
+    if modelTypeDataGen != 'NN':
+        beta_true = prior_samples['beta_treat'].squeeze()
+        alpha_true = prior_samples['alpha_out'].squeeze()
+    else:
+        beta_true = {key:val for key, val in prior_samples.items() if 'MLP_tau' in key}
+        alpha_true = {key:val for key, val in prior_samples.items() if 'MLP_Y0' in key}
+
     
-    plt.scatter(Y,y_hat_ols,s=0.1)
-    # calculate R2
-    import sklearn.metrics as metrics
-    r2_ols = metrics.r2_score(Y, y_hat_ols)
-    print('R2 OLS',r2_ols)
-    b_treatment_hat = b_hat_ols[1]
-    print('b_treatment_hat',b_treatment_hat)
-    print('avg treatment effect',np.mean(Y1-Y0))
-    # %%
-    # numpyro.render_model(modelPP_NN_treament, model_args=(hyperparams,X),
-    #                      render_distributions=True)
-    # %%
-    # Estimate with SVI
-    rng_key, rng_key_ = random.split(rng_key)
-    guide = autoguide.AutoNormal(modelPP_NN_treament, 
-                        init_loc_fn=init_to_feasible)
-
-    hyperparams['lst_layer_potOut'] = [256,32,1]
-    hyperparams['lst_dropout_potOut'] = [0.2,0.1]
-    hyperparams['lst_use_bias_potOut'] = [True,True]
-    hyperparams['lst_layer_treatEffect'] = [64,32,1]
-    hyperparams['lst_dropout_treatEffect'] = [0.2,0.1]
-    hyperparams['lst_use_bias_treatEffect'] = [True,True]
-    hyperparams['batch_size'] = 512
-
-    # svi = SVI(modelPP_NN_treament,guide,optim.Adam(0.01),Trace_ELBO())
-    svi = SVI(modelPP_NN_treament,guide,optim.Adam(0.01),TraceMeanField_ELBO())
-    svi_result = svi.run(rng_key_, 10000,X=X,T=T,Y=Y,hyperparams=hyperparams,is_training=True)
-    plt.plot(svi_result.losses)
-    svi_params = svi_result.params
-    # %%
-    # Get samples from the posterior
-    predictive = Predictive(guide, params=svi_params, num_samples=500)
-    samples_svi = predictive(random.PRNGKey(1), X=X,hyperparams=hyperparams,is_training=False)
-    samples_svi.keys()
-    # %%
-    # Get posterior predictions using samples from the posterior
-    hyperparams['batch_size'] = hyperparams['N']
-    predictivePosterior = Predictive(modelPP_NN_treament, posterior_samples=samples_svi, 
-                                     return_sites=['Y','Y0', 'Y1','tau'])
-    post_predict = predictivePosterior(random.PRNGKey(1), X=X, hyperparams=hyperparams,is_training=False)
-    post_predict.keys()
-
-    # %%
+    #%
+    # Plot true Treatment heterogneity, for first covariate
     k = 0
-    x_range = np.linspace(-5,5,100)
+    x_percentile = np.percentile(X[:,k],q=[2.5,97.5])
+    x_range = np.linspace(x_percentile[0],x_percentile[1],100)
     x_mean = X.mean(axis=0)
     x_plot = np.repeat(x_mean.reshape(1,-1),100,axis=0)
     x_plot[:,k] = x_range
     
-    hyperparams['batch_size'] = 100
-    # Get posterior predictions
-    post_predict = predictivePosterior(random.PRNGKey(1), X=x_plot,hyperparams=hyperparams,is_training=False)
+    datX_plot = datX_conditioned.copy()
+    datX_plot['X'] = x_plot
+    
+    if modelTypeDataGen == 'NN':
+        datX_plot['hyperparams']['batch_size'] = 100
     
     # Get prediction from the "true" conditioned model
-    true_predict = conditioned_predictive(rng_key_,X=x_plot)
+    true_predict = conditioned_predictive(rng_key_,**datX_plot)
+    
+    fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+    
+    # Plot "true" effect in red    
+    ax.plot(x_plot[:,k],(true_predict['Y1']-true_predict['Y0'])[0,:],color='r',alpha=1);
+
+    ax.set_xlabel(f'X[{k}]', fontsize=20)
+    ax.set_ylabel('tau', fontsize=20)
+    # Set tick font size
+    for label in (ax.get_xticklabels() + ax.get_yticklabels()):
+        label.set_fontsize(20)
+    #%    
+    # Plot hist of Y0 and Y1
+    fig, ax = plt.subplots()
+    ax.hist(Y[T==0][:10000],bins=100,density=True,color='green',alpha=0.5,label='T=0');
+    ax.hist(Y[T==1][:10000],bins=100,density=True,color='red',alpha=0.5,label='T=1');
+    
+    # Plot scatter of tau vs X    
+    mu_diff = Y1-Y0
+    aa = pd.DataFrame(np.hstack([X,mu_diff[:,None]]),
+                      columns=[f'X{i}' for i in range(0,X.shape[1])]+['tau'])
+    x_vars = [f'X{i}' for i in range(0,X.shape[1])]
+    y_vars = ["tau"]
+    
+    g = sns.PairGrid(aa,x_vars=x_vars, y_vars=y_vars)
+    g.map(sns.scatterplot,s=0.1)
+    
+
+    
+    return Y, Y_unscaled, Y_mean, Y_std, T, X, Y0, Y1, beta_true, alpha_true, conditioned_predictive, datX_conditioned
+
+# %%    
+def prior_sampling():
+    # FIXME not yet implemented
+    # %
+    nPriorSamples = 1000
+    # Prior sampling
+    rng_key, rng_key_ = random.split(rng_key)
+    conditioned_predictive = Predictive(modelPotOutcome, num_samples=nPriorSamples)
+    prior_samples = conditioned_predictive(rng_key_,X=X)
+    # %
+    fig, ax = plt.subplots()
+    ax.hist(prior_samples['T'].mean(axis=0),bins=100)
+    ax.set_title('hist of prior treatement share')
+    
+    fig, ax = plt.subplots()
+    prior_tau = prior_samples['Y1']-prior_samples['Y0']
+    ax.hist(prior_tau.mean(axis=0),bins=100)
+    ax.set_title('hist of prior avg treatment effects (tau)')
+    
+
+# %%
+if __name__ == '__main__':
+
+    # %%
+    # =====================================================
+    # Generate the data
+    # =====================================================
+    # modelTypeDataGen = 'linear'
+    # modelTypeDataGen = 'poly2'
+    # modelTypeDataGen = 'poly3'
+    modelTypeDataGen = 'poly3_step'
+    # modelTypeDataGen = 'NN'
+    # use a see that happen to produce a good split between treated and untreated for the NN
+    # rng_key = jnp.array([3599756002, 4216389472], dtype='uint32') 
+    rng_key, rng_key_ = random.split(rng_key)
+    Y, Y_unscaled, Y_mean, Y_std, T, X, Y0_true, Y1_true, beta_true, alpha_true, conditioned_predictive, datX_conditioned = data_generating(
+        rng_key=rng_key,
+        modelTypeDataGen = modelTypeDataGen,
+        N = 10000,
+        K = 5) 
+    
+
+    # %%
+    # =====================================================
+    # Estimate model
+    # =====================================================
+    # modelTypeInference = 'linear'
+    # modelTypeInference = 'poly2'
+    # modelTypeInference = 'poly3'
+    modelTypeInference = 'NN'
+    if modelTypeInference == 'linear':
+        model = modelPotOutcome
+        datXY = {'X':X, 'Y':Y_unscaled, 'T':T}
+        datX = {'X':X, 'T':T}
+    elif modelTypeInference == 'poly2':
+        model = modelPotOutcome_poly
+        datXY = {'X':X, 'Y':Y_unscaled, 'T':T, 'polyDegree':2}
+        datX = {'X':X, 'T':T, 'polyDegree':2}
+    elif modelTypeInference == 'poly3':
+        model = modelPotOutcome_poly
+        datXY = {'X':X, 'Y':Y_unscaled, 'T':T, 'polyDegree':3}
+        datX = {'X':X, 'T':T, 'polyDegree':3}
+    elif modelTypeInference == 'NN':
+        model = modelPP_NN_treament
+        
+        hyperparams = {}
+        hyperparams['N'] = 10000
+        hyperparams['K'] = 5
+        hyperparams['rng_key'] = rng_key
+        hyperparams['batch_size'] = 512
+        hyperparams['lst_lay_Y0'] = [512,64,1]
+        hyperparams['lst_drop_Y0'] = [0.2,0.2]
+        hyperparams['lst_bias_Y0'] = [True,True]
+        hyperparams['lst_lay_tau'] = [512,64,32,1]
+        hyperparams['lst_drop_tau'] = [0.2,0.2,0.2]
+        hyperparams['lst_bias_tau'] = [True,True,True]
+        
+        datXY = {'X':X, 'Y':Y_unscaled, 'T':T, 'hyperparams':hyperparams,'is_training':True}
+        datX = {'X':X, 'T':T,  'hyperparams':hyperparams, 'is_training':False}
+    else:
+        raise ValueError('modelTypeInference not recognized')
+    
+    
+    # Estimate with SVI
+    rng_key, rng_key_ = random.split(rng_key)
+    guide = autoguide.AutoNormal(model, 
+                        init_loc_fn=init_to_feasible)
+
+    # svi = SVI(model,guide,optim.Adam(0.01),Trace_ELBO())
+    svi = SVI(model,guide,optim.Adam(0.01),TraceMeanField_ELBO())
+    svi_result = svi.run(rng_key_, 4000,**datXY)
+    plt.plot(svi_result.losses)
+    svi_params = svi_result.params
+    
+    # %%
+    # Get samples from the posterior
+    predictive = Predictive(guide, params=svi_params, num_samples=500)
+    samples_svi = predictive(random.PRNGKey(1), **datX)
+    samples_svi.keys()
+    # %%
+    # Get posterior predictions using samples from the posterior
+    predictivePosterior = Predictive(model, posterior_samples=samples_svi)
+    post_predict = predictivePosterior(random.PRNGKey(1), **datX)
+    post_predict.keys()
+    
+    tau_mean_true = np.mean(Y1_true-Y0_true)
+    print('True: avg treatment effect',tau_mean_true)
+    tau_mean_hat_scaled = np.mean(post_predict['Y1']-post_predict['Y0'])
+    tau_mean_hat = np.mean((post_predict['Y1']*Y_std+Y_mean)-(post_predict['Y0']*Y_std+Y_mean))
+    # tau_mean_hat = tau_mean_hat_scaled*Y_std+Y_mean
+    print('Estimated (scaled): avg treatment effect',tau_mean_hat_scaled)
+    print('Estimated: avg treatment effect',tau_mean_hat)
+    
+    if modelTypeInference != 'NN':    
+        print('alpha_true',alpha_true)
+        print('alpha_hat',np.mean(samples_svi['alpha_out'],axis=0))
+        
+        print('beta_true',beta_true)
+        print('beta_hat',np.mean(samples_svi['beta_treat'],axis=0))
+
+    # %%
+    k = 0
+    x_percentile = np.percentile(X[:,k],q=[2.5,97.5])
+    x_range = np.linspace(x_percentile[0],x_percentile[1],100)
+    x_mean = X.mean(axis=0)
+    x_plot = np.repeat(x_mean.reshape(1,-1),100,axis=0)
+    x_plot[:,k] = x_range
+    
+    datX_plot = datX.copy()
+    datX_plot['X'] = x_plot
+    datX_plot['T'] = jnp.zeros(100)
+    if modelTypeInference == 'NN':
+        datX_plot['hyperparams']['batch_size'] = 100
+    
+    datX_plot_conditioned = datX_conditioned.copy()
+    datX_plot_conditioned['X'] = x_plot
+    datX_plot_conditioned['T'] = jnp.zeros(100)
+    # Get posterior predictions
+    post_predict = predictivePosterior(random.PRNGKey(1), **datX_plot)
+    # Get prediction from the "true" conditioned model
+    true_predict = conditioned_predictive(rng_key_,**datX_plot_conditioned)
     
     fig, ax = plt.subplots(1, 1, figsize=(8, 4))
     for i in range(1,300):
-        ax.plot(x_plot[:,k],(post_predict['Y1']-post_predict['Y0'])[i,:],color='k',alpha=0.2);
+        # tau_i = ((post_predict['Y1']*Y_std+Y_mean)-(post_predict['Y0']*Y_std+Y_mean))[i,:]
+        tau_i = ((post_predict['Y1'])-(post_predict['Y0']))[i,:]
+        # tau_i = tau_i_scaled*Y_std+Y_mean
+        ax.plot(x_plot[:,k],tau_i,color='k',alpha=0.2);
     # Add "true" effect in red    
     ax.plot(x_plot[:,k],(true_predict['Y1']-true_predict['Y0'])[0,:],color='r',alpha=1);
 
@@ -493,35 +490,11 @@ if __name__ == '__main__':
     # Set tick font size
     for label in (ax.get_xticklabels() + ax.get_yticklabels()):
         label.set_fontsize(20)
-    
+        
     
     # %%
-    fig, ax = plt.subplots(figsize=(6, 6))
-    # ax.scatter(logits_true,post_predict['logits'].mean(axis=0),s=0.1)
-    # ax.set_ylim([logits_true.min(),logits_true.max()]);
-    # ax.set_xlim([logits_true.min(),logits_true.max()]);
-    ax.scatter(Y,post_predict['Y'].mean(axis=0),s=0.1)
-    # ax.set_ylim([Y.min(),Y.max()]);
-    # ax.set_xlim([Y.min(),Y.max()]);
+    
+        
 
-    r2_svi = metrics.r2_score(Y, post_predict['Y'].mean(axis=0))
-    print('R2 SVI',r2_svi)
-    # %%
-    plt.scatter(b_treat,post_predict['b_treat'].mean(axis=0),s=0.1)
-    # %%
-    plt.scatter(mu_P0,post_predict['mu_P0'].mean(axis=0),s=0.1)
-    plt.scatter(mu_P1,post_predict['mu_P1'].mean(axis=0),s=0.1)
-    print('true avg treatment effect',np.mean(mu_P1-mu_P0))
-    print('estimated avg treatment effect',np.mean(post_predict['mu_P1']-post_predict['mu_P0']))
-    # %%
-    mu_diff_predict = np.mean(post_predict['mu_P1']-post_predict['mu_P0'],axis=0)
-    aa = pd.DataFrame(np.hstack([X,mu_diff_predict[:,None]]),
-                      columns=[f'X{i}' for i in range(0,X.shape[1])]+['mu_diff_predict'])
-    x_vars = [f'X{i}' for i in range(0,X.shape[1])]
-    y_vars = ["mu_diff_predict"]
     
-    g = sns.PairGrid(aa,x_vars=x_vars, y_vars=y_vars)
-    g.map(sns.scatterplot,s=0.1)
-    for i in range(0,X.shape[1]):
-        g.axes[0,1].set_ylim(-10,10)
-# %%
+

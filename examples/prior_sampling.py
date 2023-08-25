@@ -71,10 +71,6 @@ dfWheat_train = dfL_train.loc[dfL_train['crop']=='Winterweizen',:]
 X = dfL_train.loc[dfL_train['crop']=='Winterweizen',lstColX].values 
 Y = dfL_train.loc[dfL_train['crop']=='Winterweizen','yield_scaled'].values    
 
-# %%
-def f(x,y=2):
-    return x+y
-f(x=1,y=4)
 
 # %%
 # =============================================================================

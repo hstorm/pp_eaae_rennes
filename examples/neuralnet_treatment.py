@@ -89,7 +89,7 @@ def modelPotOutcome_poly(X, polyDegree=1, stepFunction=False, T=None, Y=None):
             tau = tau + X**3 @ betaCub_treat 
 
     if stepFunction:
-        betaStep_treat = numpyro.sample("betaStep_treat", dist.Normal(0.,10)) 
+        betaStep_treat = numpyro.sample("betaStep_treat", dist.Normal(0.,5)) 
         tau = tau + betaStep_treat * (X[:,0]>0.0)
 
     Y0 = X @ alpha_out 
@@ -361,6 +361,8 @@ if __name__ == '__main__':
     # =====================================================
     # Generate the data, set modelType to desired name
     # =====================================================
+    N = 200000
+    K = 5
     # modelTypeDataGen = 'linear'
     # modelTypeDataGen = 'poly2'
     # modelTypeDataGen = 'poly3'
@@ -368,13 +370,21 @@ if __name__ == '__main__':
     # modelTypeDataGen = 'NN'
     # use a see that happen to produce a good split between treated and untreated for the NN
     # rng_key = jnp.array([3599756002, 4216389472], dtype='uint32') 
+    rng_key = jnp.array([0, 1], dtype='uint32') 
+    # print(rng_key)
+    # [2441914641 1384938218]
     rng_key, rng_key_ = random.split(rng_key)
     Y, Y_unscaled, Y_mean, Y_std, T, X, Y0_true, Y1_true, beta_true, alpha_true, conditioned_predictive, datX_conditioned = data_generating(
         rng_key=rng_key,
         modelTypeDataGen = modelTypeDataGen,
-        N = 10000,
+        N = N,
         K = 5) 
     
+    fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+    ax.hist(X[T==0,0],bins=100, label='T=0');
+    ax.hist(X[T==1,0],bins=100, label='T=1');
+    ax.set_xlabel(f'X[0]', fontsize=20)
+    ax.legend()
 
     # %%
     # =====================================================
@@ -400,8 +410,8 @@ if __name__ == '__main__':
         model = modelPP_NN_treament
         
         hyperparams = {}
-        hyperparams['N'] = 10000
-        hyperparams['K'] = 5
+        hyperparams['N'] = N
+        hyperparams['K'] = K
         hyperparams['rng_key'] = rng_key
         hyperparams['batch_size'] = 512
         hyperparams['lst_lay_Y0'] = [512,64,1]
@@ -422,8 +432,7 @@ if __name__ == '__main__':
     guide = autoguide.AutoNormal(model, 
                         init_loc_fn=init_to_feasible)
 
-    # svi = SVI(model,guide,optim.Adam(0.01),Trace_ELBO())
-    svi = SVI(model,guide,optim.Adam(0.01),TraceMeanField_ELBO())
+    svi = SVI(model,guide,optim.Adam(0.01),Trace_ELBO())
     svi_result = svi.run(rng_key_, 4000,**datXY)
     plt.plot(svi_result.losses)
     svi_params = svi_result.params

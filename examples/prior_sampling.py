@@ -30,8 +30,8 @@ from numpyro.infer.autoguide import AutoLaplaceApproximation, AutoDiagonalNormal
 import numpyro.optim as optim
 
 az.style.use("arviz-darkgrid")
-# numpyro.set_platform("cpu")
-numpyro.set_platform("gpu")
+numpyro.set_platform("cpu")
+# numpyro.set_platform("gpu")
 # numpyro.set_host_device_count(2)
 
 # Adjust to own setting (correct for VS code devcontainer)
@@ -79,7 +79,7 @@ def model(X,sigma_b, Y=None):
 # =============================================================================
 # Prior sampling
 # =============================================================================
-sigma_b = 1
+sigma_b = 3
 nPriorSamples = 10000
 # Prior sampling
 rng_key, rng_key_ = random.split(rng_key)
@@ -145,7 +145,8 @@ fig, ax = plt.subplots(1, 1, figsize=(8, 4))
 ax.hist(prior_samples['b'][:,0],bins=100,density=True, label='prior', color='grey');
 ax.hist(post_samples['b'][:,0],bins=100,density=True, label='posterior', color='black');
 ax.set_title(f'b~N(0,{sigma_b})', fontsize=20)
-ax.set_xlabel(f"b[{lstColX[0]}]", fontsize=20)
+# ax.set_xlabel(f"b[{lstColX[0]}]", fontsize=20)
+ax.set_xlabel(f"b[{'Soil Rating'}]", fontsize=20)
 ax.set_xlim([-3,3])
 # ax.get_yaxis().set_visible(False)
 ax.set_ylabel('Density', fontsize=20)

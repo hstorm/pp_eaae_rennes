@@ -98,7 +98,7 @@ def plot_utility(lam, rho, ax=None, addTitle=True):
     ax.set_ylabel('Utility, u(x)')
     ax.set_xlabel('Payout (x)')
     if addTitle:
-        ax.set_title(f'$\lambda$ = {lam:.2f}, $\\rho$ = {rho:.2f}')
+        ax.set_title(f'$\lambda$ = {lam:.2f}, $\\rho$ = {rho:.2f}, $\\mu$ = 1')
     if ax is None:
         plt.xlim([-12, 12])
         plt.ylim([-12, 12])

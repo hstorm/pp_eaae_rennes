@@ -1,12 +1,12 @@
 
 
 ## Code EAAE 2023 Keynote **Thomas Heckelei** [Program Link](https://eaae2023.colloque.inrae.fr/keynote-speakers/thomas-heckelei)
-# *Probabilistic programming for embedding theory and quantifying uncertainty in statistical models*, 
 
-Hugo Storm, **Thomas Heckelei**, Kathy Baylis
+![alt text](title.png "Title")
 
-Questions: *hugo.storm@ilr.uni-bonn.de*
+**Thomas Heckelei**, Hugo Storm, Kathy Baylis
 
+Questions: *thomas.heckelei@ilr.uni-bonn.de*, *hugo.storm@ilr.uni-bonn.de*, *baylis@ucsb.edu*
 
 ## Keynote Slides
 [Keynote slides pptx](https://github.com/hstorm/pp_eaae_rennes/blob/master/Slides_PP_Talk_EAAE_Rennes_final.pptx) (ppt Version with plot animation) 

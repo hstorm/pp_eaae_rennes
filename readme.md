@@ -8,6 +8,10 @@ Hugo Storm, **Thomas Heckelei**, Kathy Baylis
 Questions: *hugo.storm@ilr.uni-bonn.de*
 
 
+## Keynote Slides
+[Keynote slides pptx](https://github.com/hstorm/pp_eaae_rennes/blob/master/Slides_PP_Talk_EAAE_Rennes_final.pptx) (ppt Version with plot animation) 
+[Keynote slides pdf](https://github.com/hstorm/pp_eaae_rennes/blob/master/Slides_PP_Talk_EAAE_Rennes_final.pdf) (pdf Version) 
+
 
 ## Example code
 
